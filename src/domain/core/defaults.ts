@@ -24,6 +24,7 @@ export const DEFAULT_PARAMS: DesignParams = {
   dod: 0.8,
   batteryChargeEff: 0.95,
   batteryDischargeEff: 0.95,
+  chargerEfficiency: 0.95,
   minSoc: 0.15,
   minAmbientC: 18,
   ambientC: 27,

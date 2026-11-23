@@ -105,9 +105,22 @@ export function checkInverterCompatibility(options: {
     );
   }
   const string = checkStringDesign(panel, inverter, params);
-  diagnostics.push(...string.violations.map((v) => ({ level: 'error' as const, code: 'MPPT', message: v })));
-  if (string.feasible && string.violations.length === 0) {
-    add(diagnostics, 'info', 'MPPT_OK', string.notes[2] ?? 'Configuración MPPT verificable.');
+  if (string.status === 'insufficient') {
+    // No hay datos suficientes: eso no es una falta del inversor, así que no
+    // se usa como motivo de rechazo ni se puede verificar nada.
+    add(
+      diagnostics,
+      'info',
+      'DATOS_INCOMPLETOS',
+      string.violations[0] ?? 'Datos eléctricos insuficientes para verificar el array.',
+    );
+  } else {
+    diagnostics.push(
+      ...string.violations.map((v) => ({ level: 'error' as const, code: 'MPPT', message: v })),
+    );
+    if (string.feasible) {
+      add(diagnostics, 'info', 'MPPT_OK', string.notes[2] ?? 'Configuración MPPT verificable.');
+    }
   }
 
   return {

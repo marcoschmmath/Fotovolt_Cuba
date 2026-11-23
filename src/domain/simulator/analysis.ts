@@ -5,7 +5,14 @@ import { gridHoursPerDay } from './grid';
 import { peakDesignW, analyzeEnergy } from '../calculator/energy';
 import { simulate } from './engine';
 
-/** Autonomía probada: sin sol, sin red, batería llena, carga crítica real. */
+/**
+ * Autonomía probada: sin sol, sin red, batería llena, carga crítica real.
+ *
+ * M13: el tiempo sigue pasando aunque un intervalo no tenga carga crítica
+ * (la batería se gasta igual con las demás prioridades), así que se cuentan
+ * TODOS los intervalos transcurridos hasta el primer fallo crítico. Si no
+ * falla en los 2 días simulados el valor está truncado por abajo.
+ */
 export function testedAutonomyHours(config: EnergySystemConfig): number {
   const isolated: EnergySystemConfig = {
     ...config,
@@ -17,14 +24,19 @@ export function testedAutonomyHours(config: EnergySystemConfig): number {
   const stepH = config.params.stepMinutes / 60;
   let hours = 0;
   for (const interval of result.intervals) {
-    if (interval.demandByPriorityW.critical <= 0) continue;
-    if (interval.unservedByPriority.critical > 0.01) break;
+    if (interval.unservedByPriorityKwh.critical > 0) break;
     hours += stepH;
   }
   return hours;
 }
 
-/** Horarias estimadas para pasar del SOC mínimo al completo. null = no se alcanza. */
+/**
+ * Horas de carga reales (intervalos en el que el SOC sube) para pasar del
+ * SOC mínimo al completo. null = no se alcanza en los 3 días simulados.
+ *
+ * M13: antes devolvía `(índice global + 1) · paso`, contando también la
+ * noche en la que no se carga nada y mezclando días distintos.
+ */
 export function estimateRechargeHours(
   config: EnergySystemConfig,
   mode: 'solar-grid' | 'solar-only' = 'solar-grid',
@@ -35,9 +47,17 @@ export function estimateRechargeHours(
       ? { ...config, grid: { ...config.grid, available: config.grid.available.map(() => false) } }
       : config;
   const result = simulate(scenario, { days: 3, startSoc: pack.minSoc });
-  const full = result.intervals.find((i) => i.soc >= 0.995);
-  if (!full) return null;
-  return (full.index + 1) * (config.params.stepMinutes / 60);
+  const stepH = config.params.stepMinutes / 60;
+  const fullIndex = result.intervals.findIndex((i) => i.soc >= 0.995);
+  if (fullIndex < 0) return null;
+  let chargingHours = 0;
+  let previousSoc = pack.minSoc;
+  for (let i = 0; i <= fullIndex; i += 1) {
+    const soc = result.intervals[i].soc;
+    if (soc > previousSoc + 1e-9) chargingHours += stepH;
+    previousSoc = soc;
+  }
+  return chargingHours;
 }
 
 export function analyzeBottlenecks(

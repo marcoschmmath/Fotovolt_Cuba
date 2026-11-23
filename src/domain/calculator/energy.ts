@@ -247,6 +247,15 @@ export function peakDesignW(energy: EnergyBreakdown): number {
   return energy.peakSimultaneousW + largestExtra;
 }
 
+/**
+ * Pico instantáneo de una prioridad concreta en la demanda diaria.
+ * Es la base única de «autonomía estimada»: con un valor medio diario la
+ * autonomía se exageraba hasta por `24 / horas de uso` (C5/M9).
+ */
+export function peakPriorityW(demand: ReturnType<typeof buildDailyDemand>, priority: Priority): number {
+  return demand.reduce((max, interval) => Math.max(max, interval.byPriority[priority]), 0);
+}
+
 export function appliancePowerInput(
   appliance: Appliance,
   params: DesignParams,

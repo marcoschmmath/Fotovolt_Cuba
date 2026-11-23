@@ -9,7 +9,7 @@ import type {
   PanelSpec,
   SolarInputs,
 } from '../core/types';
-import { analyzeEnergy, buildDailyDemand, peakDesignW, type EnergyBreakdown } from './energy';
+import { analyzeEnergy, buildDailyDemand, peakDesignW, peakPriorityW, type EnergyBreakdown } from './energy';
 import {
   autonomyHours,
   batteryCountFor,
@@ -60,8 +60,9 @@ function note(list: Diagnostic[], level: Diagnostic['level'], code: string, mess
 export function requiredPvWatts(
   energy: EnergyBreakdown,
   params: DesignParams,
+  battery?: Pick<BatterySpec, 'dod' | 'dischargeEff' | 'chargeEff'>,
 ): number {
-  const energyToGenerateKwh = energy.dayKwh + dailyRechargeKwh(energy, params);
+  const energyToGenerateKwh = energy.dayKwh + dailyRechargeKwh(energy, params, battery);
   const denominator = Math.max(0.1, params.hsp * params.systemEfficiency);
   return (energyToGenerateKwh * params.safetyFactor * 1000) / denominator;
 }
@@ -157,12 +158,27 @@ export function computeSizing(input: SizingInput): SizingResult {
   const continuousW = energy.peakSimultaneousW;
   const peakW = peakDesignW(energy);
 
-  const targetBatteryKwh = requiredBatteryNominalKwh(energy, input.params);
+  const targetBatteryKwh = requiredBatteryNominalKwh(energy, input.params, input.battery);
   const batteryCount = batteryCountFor(targetBatteryKwh, input.battery);
-  const targetPvW = requiredPvWatts(energy, input.params);
+  const targetPvW = requiredPvWatts(energy, input.params, input.battery);
 
   if (energy.dailyKwh <= 0) {
     note(diagnostics, 'warning', 'NO_LOADS', 'Aún no hay equipos con consumo. Añade equipos en el paso 1.');
+    // A8/M17: sin consumo no hay nada que dimensionar. Antes se seguía
+    // adelante y «Ningún inversor del catálogo cumple…» se mostraba además
+    // de NO_LOADS, con `config = null`.
+    return {
+      energy,
+      targetBatteryKwh: 0,
+      batteryCount: 0,
+      targetPvW: 0,
+      panelCount: 0,
+      inverter: null,
+      autonomyH: 0,
+      diagnostics,
+      inverterRejections: [],
+      config: null,
+    };
   }
   if (batteryCount === 0 && targetBatteryKwh > 0) {
     note(diagnostics, 'error', 'NO_BATTERY', 'La capacidad de batería solicitada no es alcanzable con el modelo elegido.');
@@ -202,10 +218,9 @@ export function computeSizing(input: SizingInput): SizingResult {
   }
 
   const pack = batteryPack(input.battery, batteryCount, input.params);
-  const criticalW = Math.max(
-    1,
-    Math.max(...demand.map((d) => d.byPriority.critical), 0),
-  );
+  // C5: sin carga crítica NO se fuerza un mínimo de 1 W: la autonomía de una
+  // batería sin carga que consumir es infinita (o no aplica), no 3496 h.
+  const criticalW = peakPriorityW(demand, 'critical');
   const autonomy = autonomyHours(pack, criticalW, input.params);
 
   const inverterRejections = explainInverterRejections({

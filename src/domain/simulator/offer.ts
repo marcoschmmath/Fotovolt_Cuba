@@ -10,7 +10,7 @@ import type {
   SolarInputs,
 } from '../core/types';
 import { checkInverterCompatibility } from '../calculator/inverter';
-import { analyzeEnergy, peakDesignW } from '../calculator/energy';
+import { analyzeEnergy, buildDailyDemand, peakDesignW, peakPriorityW } from '../calculator/energy';
 import { batteryPack, autonomyHours } from '../calculator/battery';
 import { simulate } from './engine';
 import { analyzeBottlenecks } from './analysis';
@@ -143,7 +143,9 @@ export function checkOffer(input: OfferInput): OfferReport {
   const simulation = simulate(config);
   const bottlenecks = analyzeBottlenecks(config, simulation);
   const pack = batteryPack(battery, Math.max(0, input.batteryCount), input.params);
-  const criticalW = energy.criticalKwh > 0 ? (energy.criticalKwh * 1000) / 24 : 0;
+  // C5/M9: potencia CRÍTICA PICO, no media diaria (con media la autonomía
+  // se exageraba hasta ×(24/horas de uso)).
+  const criticalW = peakPriorityW(buildDailyDemand(input.appliances, input.params), 'critical');
   const autonomy = autonomyHours(pack, criticalW, input.params);
 
   const diagnostics = [...compatibility.diagnostics, ...bottlenecks];

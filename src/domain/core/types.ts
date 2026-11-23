@@ -148,6 +148,11 @@ export interface DesignParams {
   dod: number;
   batteryChargeEff: number;
   batteryDischargeEff: number;
+  /**
+   * Eficiencia AC→DC del cargador (red → batería). Hipótesis: los equipos no
+   * suelen declararla en ficha. Nunca es la eficiencia DC→AC del inversor.
+   */
+  chargerEfficiency: number;
   minSoc: number;
   /** Temperatura mínima estimada para calcular Voc en el peor caso. */
   minAmbientC: number;
@@ -196,16 +201,32 @@ export interface IntervalResult {
   demandByPriorityW: Record<Priority, number>;
   servedW: number;
   unservedW: number;
-  servedByPriority: Record<Priority, number>;
-  unservedByPriority: Record<Priority, number>;
+  /** Energía servida por prioridad en kWh (no en W). */
+  servedByPriorityKwh: Record<Priority, number>;
+  /** Energía no servida por prioridad en kWh (no en W). */
+  unservedByPriorityKwh: Record<Priority, number>;
+  /** Importación total de red del intervalo: carga + recarga de batería. */
   gridW: number;
+  /** De la red, la parte que alimenta directamente la carga AC. */
+  gridToLoadW: number;
+  /** De la red, la parte que recarga la batería (medida en el lado AC). */
+  gridChargeW: number;
+  /** Energía almacenada en la batería en el intervalo (lado batería). */
   batteryChargeW: number;
+  /** De esa recarga, la aportada por el array (lado batería). */
+  batteryChargePvW: number;
+  /** De esa recarga, la aportada por la red (lado batería). */
+  batteryChargeGridW: number;
   batteryDischargeAcW: number;
   batteryDrawnDcW: number;
+  /** Energía exportada a la red, medida en el punto de entrega (AC). */
   exportedW: number;
+  /** Energía DC del array desaprovechada por falta de sitio o de red. */
   curtailedW: number;
   soc: number;
+  /** Pérdidas de conversión AC↔DC en el intervalo. */
   inverterLossW: number;
+  /** Pérdidas internas de la batería (carga y descarga) en el intervalo. */
   batteryLossW: number;
 }
 
@@ -214,12 +235,19 @@ export interface SimulationTotals {
   servedKwh: number;
   unservedKwh: number;
   pvProducedKwh: number;
+  /** Energía DC del array aprovechada: carga directa + recarga. */
   pvUsedKwh: number;
+  /** Energía DC del array descartada por el límite de entrada del inversor. */
   pvClippedKwh: number;
+  /** Importación total de red (a carga y a batería), medida en AC. */
   gridKwh: number;
+  /** Energía realmente almacenada en la batería (lado batería). */
   batteryChargeKwh: number;
+  /** Energía retirada del almacén (lado batería). */
   batteryDischargeKwh: number;
+  /** Energía entregada a la red. */
   exportedKwh: number;
+  /** Energía DC del array desaprovechada. */
   curtailedKwh: number;
   unservedByPriorityKwh: Record<Priority, number>;
   /** Cobertura de la demanda (energía servida / demanda). */

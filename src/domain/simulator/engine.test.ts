@@ -44,8 +44,8 @@ describe('simulación temporal', () => {
       }),
     );
     const first = result.intervals[0];
-    expect(first.unservedByPriority.critical).toBe(0);
-    expect(first.unservedByPriority.discretionary).toBeGreaterThan(0);
+    expect(first.unservedByPriorityKwh.critical).toBe(0);
+    expect(first.unservedByPriorityKwh.discretionary).toBeGreaterThan(0);
     expect(result.totals.unservedByPriorityKwh.discretionary).toBeGreaterThan(
       result.totals.unservedByPriorityKwh.critical,
     );
