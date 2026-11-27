@@ -123,7 +123,11 @@ function addCookingToSizingEnergy(
     const isNight = isWithinWindow(activity.mealHour, params.nightStart, params.nightEnd);
     return sum + (isNight ? activity.powerW * activity.durationMinutes / 60 / 1000 : 0);
   }, 0);
-  const maxCookingPowerW = enabled.reduce((sum, activity) => sum + activity.powerW, 0);
+  // Las comidas son actividades distintas y normalmente se preparan una a
+  // una. Se añade la mayor potencia individual a la punta de la vivienda,
+  // en vez de sumar desayuno + almuerzo + cena como si ocurrieran a la vez.
+  // La simulación horaria posterior comprueba la coincidencia real con otras cargas.
+  const maxCookingPowerW = enabled.reduce((max, activity) => Math.max(max, activity.powerW), 0);
 
   return {
     cookingKwh,
@@ -288,7 +292,7 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               startSoc: 1,
               cooking: {
                 activities: scenarioHousehold.activities,
-                mode: 'usual',
+                mode: household.cooking.allowFlexibleTiming ? 'flexible' : 'usual',
                 substitution: household.cooking.substitution,
                 hasFuel: household.cooking.fuelKind !== null && household.cooking.fuelConfirmed,
               },
