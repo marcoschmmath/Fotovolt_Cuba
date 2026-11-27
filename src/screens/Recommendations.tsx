@@ -30,7 +30,7 @@ function RecommendationOption({
         <Stat tone="solar" value={fmtW(recommendation.installedPvW)} label="Campo solar" sub={recommendation.panelCount + ' panel(es)'} />
         <Stat tone="storage" value={fmtKwh(recommendation.installedBatteryKwh)} label="Batería nominal" sub={recommendation.batteryCount + ' módulo(s)'} />
         <Stat value={fmtW(recommendation.inverter.ratedW)} label="Potencia inversor" />
-        <Stat tone="solar" value={(recommendation.finalSoc * 100).toFixed(1) + ' %'} label="SOC al completar 24 h" sub="Sin red eléctrica" />
+        <Stat tone="solar" value={(recommendation.rechargeSoc * 100).toFixed(1) + ' %'} label="SOC antes del ocaso" sub="Sin red eléctrica" />
       </div>
 
       <div className="recommendation-equipment">
@@ -140,7 +140,7 @@ export function Recommendations({
         description="Las propuestas usan los equipos de tu catálogo y se comprueban con una simulación de 24 horas sin red eléctrica."
       />
       <Note level="info" title="Qué significa que una propuesta sea viable">
-        El cálculo parte de la batería cargada al 100 %, simula el consumo y la producción solar durante 24 horas y exige que no quede energía sin suministrar y que la batería termine al menos al 99,9 %. La comprobación usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
+        La prueba parte del SOC mínimo permitido al amanecer, simula un ciclo completo de 24 horas sin red y exige que la batería alcance al menos el 99,9 % antes del ocaso, sin dejar cargas sin suministro. Usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
       </Note>
       {cards.map((card) => (
         <section className="stack" key={card.tier.id} aria-label={'Opción ' + card.tier.label}>
