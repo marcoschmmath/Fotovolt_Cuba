@@ -171,6 +171,12 @@ function candidateScore(candidate: SolarRecommendation): number {
 
 function sortCandidates(candidates: SolarRecommendation[]): SolarRecommendation[] {
   return [...candidates].sort((a, b) => {
+    const referenceCount = (item: SolarRecommendation) =>
+      Number(Boolean(item.panel.isReference)) +
+      Number(Boolean(item.battery.isReference)) +
+      Number(Boolean(item.inverter.isReference));
+    const referenceDifference = referenceCount(a) - referenceCount(b);
+    if (referenceDifference !== 0) return referenceDifference;
     if (a.technicalStatus !== b.technicalStatus) {
       return a.technicalStatus === 'verified' ? -1 : 1;
     }
