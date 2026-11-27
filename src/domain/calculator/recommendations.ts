@@ -8,7 +8,7 @@ import type { HouseholdProfile } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
 import { householdForRecommendation, type RecommendationTierId } from '../household/recommendationProfile';
 import { analyzeEnergy, intervalCount, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
-import { batteryCountFor, batteryPack, requiredBatteryNominalKwh } from './battery';
+import { batteryCountFor, requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkInverterCompatibility } from './inverter';
 import { checkBalancedArrayConfiguration } from './pv';
@@ -277,10 +277,9 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               inverter,
               gridAvailable,
             });
-            const initialPack = batteryPack(battery, batteryCount, params);
             const simulation = simulate(config, {
-              startHour: config.solar.sunrise,
-              startSoc: initialPack.minSoc,
+              startHour: 18,
+              startSoc: 1,
               cooking: {
                 activities: scenarioHousehold.activities,
                 mode: 'usual',
@@ -289,13 +288,7 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               },
             });
 
-            const lastSolarInterval = simulation.intervals
-              .filter((interval) =>
-                interval.hour >= config.solar.sunrise &&
-                interval.hour < config.solar.sunset,
-              )
-              .at(-1);
-            const rechargeSoc = lastSolarInterval?.soc ?? initialPack.minSoc;
+            const rechargeSoc = simulation.totals.finalSoc;
             if (
               !simulation.valid ||
               rechargeSoc < FULL_SOC_TOLERANCE ||
@@ -370,7 +363,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
           ? 'No hay equipos con prioridad crítica o importante. Ajusta las prioridades de tu vivienda para generar esta opción.'
           : 'Esta vivienda todavía no tiene consumos suficientes para dimensionar una instalación.';
     } else if (!recommendation) {
-      reason = 'No se encontró una combinación del catálogo que cubra las cargas y recargue la batería desde su SOC mínimo hasta al menos el 99,9 % antes del ocaso, sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
+      reason = 'No se encontró una combinación del catálogo que cubra las cargas y devuelva la batería a al menos el 99,9 % de su SOC inicial tras un ciclo de 24 horas sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
     }
     return { tier, recommendation, reason };
   });
