@@ -8,7 +8,7 @@ import type { HouseholdProfile } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
 import { householdForRecommendation, type RecommendationTierId } from '../household/recommendationProfile';
 import { analyzeEnergy, intervalCount, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
-import { batteryCountFor, requiredBatteryNominalKwh } from './battery';
+import { batteryCountFor, batteryPack, requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkInverterCompatibility } from './inverter';
 import { checkBalancedArrayConfiguration } from './pv';
@@ -65,7 +65,7 @@ export interface SolarRecommendation {
   requiredPeakW: number;
   simulatedDemandKwh: number;
   simulatedPvKwh: number;
-  finalSoc: number;
+  rechargeSoc: number;
   unservedKwh: number;
   technicalStatus: 'verified' | 'partial';
   warnings: string[];
@@ -284,9 +284,10 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               inverter,
               gridAvailable,
             });
+            const initialPack = batteryPack(battery, batteryCount, params);
             const simulation = simulate(config, {
-              startHour: 18,
-              startSoc: 1,
+              startHour: config.solar.sunrise,
+              startSoc: initialPack.minSoc,
               cooking: {
                 activities: scenarioHousehold.activities,
                 mode: 'usual',
@@ -295,9 +296,16 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               },
             });
 
+            const lastSolarInterval = simulation.intervals
+              .filter((interval) =>
+                interval.hour >= config.solar.sunrise &&
+                interval.hour < config.solar.sunset,
+              )
+              .at(-1);
+            const rechargeSoc = lastSolarInterval?.soc ?? initialPack.minSoc;
             if (
               !simulation.valid ||
-              simulation.totals.finalSoc < FULL_SOC_TOLERANCE ||
+              rechargeSoc < FULL_SOC_TOLERANCE ||
               simulation.totals.unservedKwh > ENERGY_TOLERANCE_KWH
             ) continue;
 
@@ -329,7 +337,7 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               requiredPeakW,
               simulatedDemandKwh: simulation.totals.demandKwh,
               simulatedPvKwh: simulation.totals.pvProducedKwh,
-              finalSoc: simulation.totals.finalSoc,
+              rechargeSoc,
               unservedKwh: simulation.totals.unservedKwh,
               technicalStatus: technical.status,
               warnings,
