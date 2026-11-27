@@ -372,6 +372,9 @@ function sanitizeSystem(value: unknown, households: HouseholdProfile[], catalogs
     inverterId: pick(catalogs.inverters, value.inverterId, catalogs.inverters[0]).id,
     installationType: value.installationType === 'offgrid' ? 'offgrid' : 'hybrid',
     params,
+    ...(value.recommendationTier === 'essential' || value.recommendationTier === 'moderate' || value.recommendationTier === 'roomy'
+      ? { recommendationTier: value.recommendationTier }
+      : {}),
     origin: value.origin === 'offer' ? 'offer' : 'user',
     createdAt: strOr(value.createdAt, new Date().toISOString()),
     updatedAt: strOr(value.updatedAt, strOr(value.createdAt, new Date().toISOString())),
