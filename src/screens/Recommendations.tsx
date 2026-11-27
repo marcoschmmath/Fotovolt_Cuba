@@ -30,7 +30,7 @@ function RecommendationOption({
         <Stat tone="solar" value={fmtW(recommendation.installedPvW)} label="Campo solar" sub={recommendation.panelCount + ' panel(es)'} />
         <Stat tone="storage" value={fmtKwh(recommendation.installedBatteryKwh)} label="Batería nominal" sub={recommendation.batteryCount + ' módulo(s)'} />
         <Stat value={fmtW(recommendation.inverter.ratedW)} label="Potencia inversor" />
-        <Stat tone="solar" value={(recommendation.rechargeSoc * 100).toFixed(1) + ' %'} label="SOC antes del ocaso" sub="Sin red eléctrica" />
+        <Stat tone="solar" value={(recommendation.rechargeSoc * 100).toFixed(1) + ' %'} label="SOC al finalizar el ciclo" sub="Sin red eléctrica" />
       </div>
 
       <div className="recommendation-equipment">
@@ -143,7 +143,7 @@ export function Recommendations({
         description="Las propuestas usan los equipos de tu catálogo y se comprueban con una simulación de 24 horas sin red eléctrica."
       />
       <Note level="info" title="Qué significa que una propuesta sea viable">
-        La prueba parte del SOC mínimo permitido al amanecer, simula un ciclo completo de 24 horas sin red y exige que la batería alcance al menos el 99,9 % antes del ocaso, sin dejar cargas sin suministro. Usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
+        La prueba parte con la batería al 100 % al atardecer, simula un ciclo completo de 24 horas sin red y exige que termine nuevamente al menos al 99,9 %, sin dejar cargas sin suministro. Así se comprueba que la energía solar del día repone lo consumido durante el ciclo. Usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
         <p className="field__hint">Hipótesis utilizadas: {params.hsp.toFixed(1)} HSP, eficiencia global {Math.round(params.systemEfficiency * 100)} %, sombra/suciedad {Math.round(params.shading * 100)} % y temperatura ambiente {params.ambientC} °C.</p>
       </Note>
       {cards.map((card) => (
