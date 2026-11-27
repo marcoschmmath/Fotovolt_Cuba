@@ -5,19 +5,17 @@ import type {
   PanelSpec,
 } from '../core/types';
 import type { HouseholdProfile } from '../household/types';
-import { effectivePriority } from '../household/types';
-import { analyzeEnergy, peakDesignW, type EnergyBreakdown } from './energy';
+import type { SystemConfiguration } from '../system/types';
+import { householdForRecommendation, type RecommendationTierId } from '../household/recommendationProfile';
+import { analyzeEnergy, intervalCount, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
 import { batteryCountFor, requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkInverterCompatibility } from './inverter';
 import { checkBalancedArrayConfiguration } from './pv';
 import { buildEnergySystemConfig } from '../simulator/bridge';
 import { simulate } from '../simulator/engine';
-import { intervalCount } from './energy';
-import { uid } from '../persistence/storage';
-import type { SystemConfiguration } from '../system/types';
 
-export type RecommendationTierId = 'essential' | 'moderate' | 'roomy';
+export type { RecommendationTierId } from '../household/recommendationProfile';
 
 export interface RecommendationTier {
   id: RecommendationTierId;
@@ -64,6 +62,7 @@ export interface SolarRecommendation {
   installedBatteryKwh: number;
   targetBatteryKwh: number;
   targetPvW: number;
+  requiredPeakW: number;
   simulatedDemandKwh: number;
   simulatedPvKwh: number;
   finalSoc: number;
@@ -90,67 +89,55 @@ export interface RecommendationInput {
 
 interface CandidateSearchInput extends RecommendationInput {
   tier: RecommendationTier;
-  appliances: HouseholdProfile['appliances'];
-  activities: HouseholdProfile['activities'];
+  scenarioHousehold: HouseholdProfile;
   energy: EnergyBreakdown;
+  sizingEnergy: EnergyBreakdown;
+  cookingKwh: number;
+  cookingNightKwh: number;
 }
 
 const FULL_SOC_TOLERANCE = 0.999;
 const ENERGY_TOLERANCE_KWH = 1e-6;
 const MAX_PANEL_COUNT = 200;
 const MAX_BATTERY_COUNT = 100;
-const EXTRA_BATTERY_MODULES_TO_TRY = 4;
+const EXTRA_BATTERY_MODULES_TO_TRY = 3;
 
-function activitiesForTier(
-  household: HouseholdProfile,
-  tier: RecommendationTierId,
-): HouseholdProfile['activities'] {
-  if (!household.cooking.enabled) return [];
-  return household.activities.filter((activity) => {
-    if (!activity.enabled) return false;
-    return tier === 'essential' ? activity.essential : true;
-  });
+function hasDeclaredLoad(household: HouseholdProfile): boolean {
+  return household.appliances.some((appliance) =>
+    appliance.quantity > 0 && appliance.hoursPerDay > 0 && appliance.powerW > 0,
+  ) || household.activities.some((activity) =>
+    activity.enabled && activity.powerW > 0 && activity.durationMinutes > 0,
+  );
 }
 
-function appliancesForTier(
+function addCookingToSizingEnergy(
+  energy: EnergyBreakdown,
   household: HouseholdProfile,
-  tier: RecommendationTierId,
-): HouseholdProfile['appliances'] {
-  return household.appliances
-    .filter((appliance) => {
-      const priority = effectivePriority(appliance, household.night);
-      if (tier === 'essential') {
-        return priority === 'critical' || household.night.essentialIds.includes(appliance.id);
-      }
-      if (tier === 'moderate') return priority !== 'discretionary';
-      return true;
-    })
-    .map((appliance) => ({
-      ...appliance,
-      priority: effectivePriority(appliance, household.night),
-    }));
-}
+  params: DesignParams,
+): { energy: EnergyBreakdown; cookingKwh: number; cookingNightKwh: number } {
+  const enabled = household.cooking.enabled
+    ? household.activities.filter((activity) => activity.enabled && activity.powerW > 0 && activity.durationMinutes > 0)
+    : [];
+  const cookingKwh = enabled.reduce(
+    (sum, activity) => sum + activity.powerW * activity.durationMinutes / 60 / 1000,
+    0,
+  );
+  const cookingNightKwh = enabled.reduce((sum, activity) => {
+    const isNight = isWithinWindow(activity.mealHour, params.nightStart, params.nightEnd);
+    return sum + (isNight ? activity.powerW * activity.durationMinutes / 60 / 1000 : 0);
+  }, 0);
+  const maxCookingPowerW = enabled.reduce((sum, activity) => sum + activity.powerW, 0);
 
-function hasDeclaredLoad(
-  appliances: HouseholdProfile['appliances'],
-  activities: HouseholdProfile['activities'],
-): boolean {
-  return appliances.some((appliance) => appliance.quantity > 0 && appliance.hoursPerDay > 0 && appliance.powerW > 0) ||
-    activities.some((activity) => activity.enabled && activity.powerW > 0 && activity.durationMinutes > 0);
-}
-
-function buildScenarioHousehold(
-  household: HouseholdProfile,
-  appliances: HouseholdProfile['appliances'],
-  activities: HouseholdProfile['activities'],
-): HouseholdProfile {
-  const includedIds = new Set(appliances.map((appliance) => appliance.id));
   return {
-    ...household,
-    appliances,
-    activities,
-    night: {
-      essentialIds: household.night.essentialIds.filter((id) => includedIds.has(id)),
+    cookingKwh,
+    cookingNightKwh,
+    energy: {
+      ...energy,
+      dailyKwh: energy.dailyKwh + cookingKwh,
+      dayKwh: energy.dayKwh + cookingKwh - cookingNightKwh,
+      nightKwh: energy.nightKwh + cookingNightKwh,
+      peakSimultaneousW: energy.peakSimultaneousW + maxCookingPowerW,
+      averageW: energy.averageW + (cookingKwh * 1000) / 24,
     },
   };
 }
@@ -161,13 +148,13 @@ function optionPrice(
   battery: BatterySpec,
   batteryCount: number,
   inverter: InverterSpec,
-): { price?: number; currency?: 'USD' | 'CUP' } {
+): { estimatedPrice?: number; currency?: 'USD' | 'CUP' } {
   const prices = [panel.price, battery.price, inverter.price];
   const currencies = [panel.currency, battery.currency, inverter.currency];
   if (prices.some((price) => price === undefined) || currencies.some((currency) => currency === undefined)) return {};
   if (currencies.some((currency) => currency !== currencies[0])) return {};
   return {
-    price: panelCount * (panel.price ?? 0) + batteryCount * (battery.price ?? 0) + (inverter.price ?? 0),
+    estimatedPrice: panelCount * (panel.price ?? 0) + batteryCount * (battery.price ?? 0) + (inverter.price ?? 0),
     currency: currencies[0],
   };
 }
@@ -179,101 +166,102 @@ function candidateScore(candidate: SolarRecommendation): number {
   const pvExcess = candidate.targetPvW > 0
     ? (candidate.installedPvW - candidate.targetPvW) / candidate.targetPvW
     : candidate.installedPvW / 1000;
-  const inverterExcess = candidate.inverter.ratedW > 0
-    ? (candidate.inverter.ratedW - candidate.simulatedDemandKwh * 1000 / 24) / candidate.inverter.ratedW
-    : 1;
+  const inverterExcess = candidate.requiredPeakW > 0
+    ? (candidate.inverter.ratedW - candidate.requiredPeakW) / candidate.requiredPeakW
+    : 0;
   return batteryExcess * 3 + pvExcess * 2 + inverterExcess;
 }
 
-function isUnfixableInverterError(codes: string[]): boolean {
-  return codes.some((code) =>
-    !['BATT_DISCHARGE_W', 'MPPT', 'PV_INPUT'].includes(code),
-  );
+function sortCandidates(candidates: SolarRecommendation[]): SolarRecommendation[] {
+  return [...candidates].sort((a, b) => {
+    if (a.technicalStatus !== b.technicalStatus) {
+      return a.technicalStatus === 'verified' ? -1 : 1;
+    }
+    if (
+      a.currency && b.currency &&
+      a.currency === b.currency &&
+      a.estimatedPrice !== undefined &&
+      b.estimatedPrice !== undefined
+    ) {
+      return a.estimatedPrice - b.estimatedPrice;
+    }
+    return candidateScore(a) - candidateScore(b);
+  });
 }
 
-function findTierRecommendation(input: CandidateSearchInput): SolarRecommendation | null {
-  const { household, tier, appliances, activities, energy, params } = input;
-  if (!hasDeclaredLoad(appliances, activities)) return null;
+function findTierRecommendations(input: CandidateSearchInput): SolarRecommendation[] {
+  const { household, tier, scenarioHousehold, params, sizingEnergy } = input;
+  if (!hasDeclaredLoad(scenarioHousehold)) return [];
 
-  const demandPeakW = energy.peakSimultaneousW;
-  const demandSurgeW = peakDesignW(energy);
-  const scenarioHousehold = buildScenarioHousehold(household, appliances, activities);
+  const requiredContinuousW = sizingEnergy.peakSimultaneousW * tier.inverterMargin;
+  const requiredPeakW = peakDesignW(sizingEnergy);
   const gridAvailable = new Array<boolean>(intervalCount(params)).fill(false);
-  const candidates: SolarRecommendation[] = [];
+  const recommendations: SolarRecommendation[] = [];
 
-  const panels = [...input.panels]
+  const panels = input.panels
     .filter((panel) => panel.powerW > 0)
     .sort((a, b) => b.powerW - a.powerW);
-  const batteries = [...input.batteries]
+  const batteries = input.batteries
     .filter((battery) => battery.nominalKwh > 0 && battery.nominalV > 0)
-    .sort((a, b) => b.nominalKwh - a.nominalKwh);
-  const inverters = [...input.inverters]
+    .sort((a, b) => a.nominalKwh - b.nominalKwh);
+  const inverters = input.inverters
     .filter((inverter) => inverter.ratedW > 0 && inverter.maxPvInputW > 0)
     .sort((a, b) => a.ratedW - b.ratedW);
 
   for (const battery of batteries) {
-    const baseBatteryKwh = requiredBatteryNominalKwh(energy, params, battery);
-    const targetBatteryKwh = baseBatteryKwh * tier.batteryMargin;
+    const targetBatteryKwh = requiredBatteryNominalKwh(sizingEnergy, params, battery) * tier.batteryMargin;
     const firstBatteryCount = Math.max(1, batteryCountFor(targetBatteryKwh, battery));
-    const lastBatteryCount = Math.min(
-      MAX_BATTERY_COUNT,
-      firstBatteryCount + EXTRA_BATTERY_MODULES_TO_TRY,
-    );
+    const lastBatteryCount = Math.min(MAX_BATTERY_COUNT, firstBatteryCount + EXTRA_BATTERY_MODULES_TO_TRY);
+    const targetPvW = requiredPvWatts(sizingEnergy, params, battery);
 
     for (const inverter of inverters) {
-      const designContinuousW = demandPeakW * tier.inverterMargin;
-      let foundForPair = false;
+      // Potencia y arranque del inversor no se solucionan añadiendo batería o placas.
+      if (inverter.ratedW < requiredContinuousW * 1.1 || inverter.surgeW > 0 && inverter.surgeW < requiredPeakW) continue;
+      if (battery.nominalV > 0 && inverter.batteryVoltageV > 0) {
+        const difference = Math.abs(battery.nominalV - inverter.batteryVoltageV);
+        if (difference > 5 && difference / inverter.batteryVoltageV > 0.12) continue;
+      }
 
       for (const panel of panels) {
-        const targetPvW = requiredPvWatts(energy, params, battery);
         const desiredPanelCount = Math.max(1, Math.ceil(targetPvW / panel.powerW));
-        const maxPanels = Math.min(
-          MAX_PANEL_COUNT,
-          Math.floor(inverter.maxPvInputW / panel.powerW),
-        );
+        const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(inverter.maxPvInputW / panel.powerW));
         if (maxPanels < desiredPanelCount) {
-          // Se prueba el máximo admitido: si no recarga completamente, este
-          // inversor no puede resolver el déficit con este panel.
+          // Se permite probar la capacidad PV máxima; la simulación decidirá
+          // si ese límite todavía alcanza para restaurar la batería.
         }
         if (maxPanels < 1) continue;
 
+        let foundForPanel = false;
         for (let batteryCount = firstBatteryCount; batteryCount <= lastBatteryCount; batteryCount += 1) {
-          const firstPanelCount = Math.min(desiredPanelCount, maxPanels);
-          let retryWithMoreBattery = false;
-
-          for (let panelCount = firstPanelCount; panelCount <= maxPanels; panelCount += 1) {
+          for (let panelCount = Math.min(desiredPanelCount, maxPanels); panelCount <= maxPanels; panelCount += 1) {
             const technical = checkInverterCompatibility({
               inverter,
               battery,
               panel,
               panelCount,
               batteryCount,
-              continuousW: designContinuousW,
-              peakW: demandSurgeW,
+              continuousW: requiredContinuousW,
+              peakW: requiredPeakW,
               voltage: household.voltage,
               params,
             });
             const errorCodes = technical.diagnostics
               .filter((diagnostic) => diagnostic.level === 'error')
               .map((diagnostic) => diagnostic.code);
-
-            if (errorCodes.length > 0) {
-              if (errorCodes.includes('BATT_DISCHARGE_W') &&
-                  errorCodes.every((code) => code === 'BATT_DISCHARGE_W')) {
-                retryWithMoreBattery = true;
-                break;
-              }
-              if (isUnfixableInverterError(errorCodes)) break;
-              // Una configuración de strings puede no ser posible para un
-              // número concreto de paneles; se prueba el siguiente entero.
-              if (errorCodes.includes('MPPT')) continue;
-              if (errorCodes.includes('PV_INPUT')) break;
+            if (errorCodes.some((code) => !['MPPT'].includes(code))) {
+              // Si la incompatibilidad es por descarga del BMS, más módulos
+              // podrían resolverla; las demás requieren otro equipo.
+              if (errorCodes.length === 1 && errorCodes[0] === 'BATT_DISCHARGE_W') break;
               break;
             }
 
+            const arrayCheck = checkBalancedArrayConfiguration(panel, inverter, panelCount, params);
+            if (arrayCheck.status === 'incompatible') continue;
+
             const system: SystemConfiguration = {
-              id: uid('recommendation-check'),
+              id: 'recommendation-preview',
               householdProfileId: household.id,
+              recommendationTier: tier.id,
               name: 'Comprobación automática',
               panelId: panel.id,
               panelCount,
@@ -298,34 +286,32 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
               startHour: 18,
               startSoc: 1,
               cooking: {
-                activities,
+                activities: scenarioHousehold.activities,
                 mode: 'usual',
                 substitution: household.cooking.substitution,
                 hasFuel: household.cooking.fuelKind !== null && household.cooking.fuelConfirmed,
               },
             });
 
-            const fullyRecharged = simulation.totals.finalSoc >= FULL_SOC_TOLERANCE;
-            const noUnservedEnergy = simulation.totals.unservedKwh <= ENERGY_TOLERANCE_KWH;
-            if (!simulation.valid || !fullyRecharged || !noUnservedEnergy) continue;
+            if (
+              !simulation.valid ||
+              simulation.totals.finalSoc < FULL_SOC_TOLERANCE ||
+              simulation.totals.unservedKwh > ENERGY_TOLERANCE_KWH
+            ) continue;
 
-            const arrayCheck = checkBalancedArrayConfiguration(panel, inverter, panelCount, params);
             const warnings: string[] = [];
             if (technical.status === 'partial' || arrayCheck.status === 'insufficient') {
-              warnings.push('La simulación energética cumple, pero algunos datos eléctricos del catálogo no permiten verificar toda la conexión. Confirma las fichas técnicas antes de comprar.');
+              warnings.push('La simulación energética cumple, pero faltan datos de ficha para verificar completamente la conexión eléctrica. Confirma estos parámetros antes de comprar.');
             }
             if (panel.isReference || battery.isReference || inverter.isReference) {
               warnings.push('La combinación incluye al menos un equipo de referencia. Sustituye sus datos por los de la ficha técnica del modelo que vayas a comprar.');
             }
             if (simulation.totals.cookingMealsSubstituted > 0) {
-              warnings.push('La recarga se ha comprobado respetando el uso de combustible alternativo declarado para algunas comidas.');
-            }
-            if (panelCount * panel.powerW + 1e-6 < targetPvW) {
-              warnings.push('La potencia fotovoltaica instalada queda por debajo de la estimación inicial; la simulación horaria sí alcanza el SOC de partida bajo las hipótesis solares configuradas.');
+              warnings.push('La simulación respeta el combustible alternativo declarado para algunas comidas.');
             }
 
             const price = optionPrice(panel, panelCount, battery, batteryCount, inverter);
-            candidates.push({
+            recommendations.push({
               tier: tier.id,
               label: tier.label,
               description: tier.description,
@@ -338,6 +324,7 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
               installedBatteryKwh: batteryCount * battery.nominalKwh,
               targetBatteryKwh,
               targetPvW,
+              requiredPeakW,
               simulatedDemandKwh: simulation.totals.demandKwh,
               simulatedPvKwh: simulation.totals.pvProducedKwh,
               finalSoc: simulation.totals.finalSoc,
@@ -346,74 +333,44 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
               warnings,
               ...price,
             });
-            foundForPair = true;
+            // Para esta combinación, más paneles no mejoran la viabilidad y
+            // sólo aumentan el tamaño/coste. Se busca otro conjunto de equipos.
+            foundForPanel = true;
             break;
           }
-
-          if (foundForPair) break;
-          if (!retryWithMoreBattery && batteryCount === firstBatteryCount) {
-            // Si no hay una incompatibilidad de potencia de descarga que
-            // pueda corregirse añadiendo módulos, los demás bancos no ayudan.
-            const minimalCheck = checkInverterCompatibility({
-              inverter,
-              battery,
-              panel,
-              panelCount: Math.min(desiredPanelCount, maxPanels),
-              batteryCount,
-              continuousW: designContinuousW,
-              peakW: demandSurgeW,
-              voltage: household.voltage,
-              params,
-            });
-            const hardErrors = minimalCheck.diagnostics
-              .filter((diagnostic) => diagnostic.level === 'error')
-              .map((diagnostic) => diagnostic.code)
-              .filter((code) => code !== 'BATT_DISCHARGE_W');
-            if (hardErrors.length > 0) break;
-          }
+          if (foundForPanel) break;
         }
-        if (foundForPair) break;
       }
-      if (foundForPair) break;
     }
-    if (candidates.length > 0) break;
   }
 
-  if (candidates.length === 0) return null;
-  candidates.sort((a, b) => {
-    if (a.currency && b.currency && a.currency === b.currency &&
-        a.estimatedPrice !== undefined && b.estimatedPrice !== undefined) {
-      return a.estimatedPrice - b.estimatedPrice;
-    }
-    if (a.technicalStatus !== b.technicalStatus) {
-      return a.technicalStatus === 'verified' ? -1 : 1;
-    }
-    return candidateScore(a) - candidateScore(b);
-  });
-  return candidates[0];
+  return sortCandidates(recommendations);
 }
 
 export function generateSolarRecommendations(input: RecommendationInput): RecommendationCard[] {
   return RECOMMENDATION_TIERS.map((tier) => {
-    const appliances = appliancesForTier(input.household, tier.id);
-    const activities = activitiesForTier(input.household, tier.id);
-    const energy = analyzeEnergy(appliances, input.params);
-    const recommendation = findTierRecommendation({
+    const scenarioHousehold = householdForRecommendation(input.household, tier.id);
+    const energy = analyzeEnergy(scenarioHousehold.appliances, input.params);
+    const sizing = addCookingToSizingEnergy(energy, scenarioHousehold, input.params);
+    const recommendation = findTierRecommendations({
       ...input,
       tier,
-      appliances,
-      activities,
+      scenarioHousehold,
       energy,
-    });
+      sizingEnergy: sizing.energy,
+      cookingKwh: sizing.cookingKwh,
+      cookingNightKwh: sizing.cookingNightKwh,
+    })[0] ?? null;
+
     let reason: string | null = null;
-    if (!hasDeclaredLoad(appliances, activities)) {
+    if (!hasDeclaredLoad(scenarioHousehold)) {
       reason = tier.id === 'essential'
-        ? 'No hay equipos críticos ni equipos marcados como imprescindibles de noche. Revisa las prioridades de tu vivienda para generar esta opción.'
+        ? 'No hay equipos críticos ni marcados como imprescindibles de noche. Revisa las prioridades de tu vivienda para generar esta opción.'
         : tier.id === 'moderate'
           ? 'No hay equipos con prioridad crítica o importante. Ajusta las prioridades de tu vivienda para generar esta opción.'
           : 'Esta vivienda todavía no tiene consumos suficientes para dimensionar una instalación.';
     } else if (!recommendation) {
-      reason = 'No se encontró una combinación del catálogo que pueda alimentar estas cargas y recuperar al menos el 99,9 % de la carga inicial en 24 horas sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
+      reason = 'No se encontró una combinación del catálogo que cubra las cargas y recupere al menos el 99,9 % de la carga inicial en 24 horas, sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
     }
     return { tier, recommendation, reason };
   });
