@@ -220,6 +220,12 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
                       <Button variant="dark" icon="settings" onClick={() => { patch({ activeHouseholdId: household.id }); navigate(`/hogar?id=${household.id}`); }}>
                         Editar vivienda
                       </Button>
+                      <Button variant="outline" icon="sun" onClick={() => {
+                        patch({ activeHouseholdId: household.id });
+                        navigate(`/recomendaciones?hogar=${household.id}`);
+                      }}>
+                        Generar recomendaciones
+                      </Button>
                       <Button variant="outline" icon="plus" onClick={startInstall}>
                         Nueva instalación
                       </Button>
