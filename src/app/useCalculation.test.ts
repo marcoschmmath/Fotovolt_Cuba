@@ -3,6 +3,7 @@ import type { AppState } from '../domain/persistence/storage';
 import type { HouseholdProfile } from '../domain/household/types';
 import type { SystemConfiguration } from '../domain/system/types';
 import { resolveInstallation } from './useCalculation';
+import { appliance } from '../test/fixtures';
 
 function stateWithOneInstallation(): AppState {
   const household = { id: 'household-owned', name: 'Casa guardada' } as HouseholdProfile;
@@ -40,4 +41,39 @@ describe('resolveInstallation', () => {
     expect(resolved.household).toBeNull();
     expect(resolved.requestedInstallationMissing).toBe(true);
   });
+  it('evalúa una instalación recomendada sólo con el nivel de cargas elegido', () => {
+    const base = stateWithOneInstallation();
+    const originalHousehold = {
+      ...base.households[0],
+      appliances: [
+        appliance({ id: 'critical', priority: 'critical' }),
+        appliance({ id: 'optional', priority: 'discretionary' }),
+      ],
+      cooking: {
+        enabled: false,
+        fuelKind: null,
+        fuelConfirmed: false,
+        substitution: 'electric-first',
+        allowFlexibleTiming: true,
+      },
+      activities: [],
+      night: { essentialIds: [] },
+      voltage: 220,
+    } as HouseholdProfile;
+    const recommendedSystem = {
+      ...base.installations[0],
+      recommendationTier: 'essential' as const,
+    };
+    const state = {
+      ...base,
+      households: [originalHousehold],
+      installations: [recommendedSystem],
+    } as AppState;
+
+    const resolved = resolveInstallation(state, 'install-owned');
+
+    expect(resolved.household?.appliances.map((item) => item.id)).toEqual(['critical']);
+    expect(originalHousehold.appliances).toHaveLength(2);
+  });
+
 });
