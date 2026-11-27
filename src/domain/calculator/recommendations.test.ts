@@ -44,7 +44,7 @@ function household(): HouseholdProfile {
 }
 
 describe('generateSolarRecommendations', () => {
-  it('genera tres niveles con equipos reales del catálogo y exige recarga solar diaria', () => {
+  it('genera tres niveles aplicando el criterio de compatibilidad existente (08:00, SOC inicial 30 %)', () => {
     const source = household();
     const result = generateSolarRecommendations({
       household: source,
@@ -63,8 +63,14 @@ describe('generateSolarRecommendations', () => {
       expect(recommendation.inverter.id).toBe('ref-inv-5000');
       expect(recommendation.panelCount).toBeGreaterThan(0);
       expect(recommendation.batteryCount).toBeGreaterThan(0);
-      expect(recommendation.rechargeSoc).toBeGreaterThanOrEqual(0.999);
-      expect(recommendation.unservedKwh).toBeLessThanOrEqual(1e-6);
+      expect(recommendation.initialSoc).toBeGreaterThanOrEqual(0.30);
+      expect(recommendation.initialSoc).toBeLessThanOrEqual(1);
+      expect(recommendation.coverageWorst).toBeGreaterThanOrEqual(0.999);
+      expect(recommendation.energySustainable).toBe(true);
+      expect(recommendation.cookingMealsUnmetWorst).toBe(0);
+      expect(recommendation.finalSocWorst).toBeGreaterThanOrEqual(recommendation.initialSoc - 0.005);
+      expect(recommendation.blackoutCoverage).toBeGreaterThanOrEqual(0);
+      expect(recommendation.blackoutCoverage).toBeLessThanOrEqual(1);
     }
     expect(source.appliances).toHaveLength(3);
   });
