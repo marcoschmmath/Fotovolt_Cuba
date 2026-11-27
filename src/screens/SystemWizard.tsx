@@ -5,6 +5,7 @@ import { batteryPack } from '../domain/calculator/battery';
 import { analyzeEnergy, peakDesignW } from '../domain/calculator/energy';
 import { checkInverterCompatibility } from '../domain/calculator/inverter';
 import { checkBalancedArrayConfiguration } from '../domain/calculator/pv';
+import { householdForRecommendation } from '../domain/household/recommendationProfile';
 import { uid } from '../domain/persistence/storage';
 import { systemParams, type SystemConfiguration } from '../domain/system/types';
 import type { BatterySpec, DesignParams, InverterSpec, PanelSpec } from '../domain/core/types';
@@ -112,7 +113,10 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
   const arrayCheck = panel && inverter && draft.panelCount > 0
     ? checkBalancedArrayConfiguration(panel, inverter, draft.panelCount, draft.params)
     : null;
-  const householdDemand = analyzeEnergy(household.appliances, draft.params);
+  const designHousehold = draft.recommendationTier
+    ? householdForRecommendation(household, draft.recommendationTier)
+    : household;
+  const householdDemand = analyzeEnergy(designHousehold.appliances, draft.params);
   const technicalCheck = panel && battery && inverter && draft.panelCount > 0 && draft.batteryCount > 0
     ? checkInverterCompatibility({
         inverter, battery, panel, panelCount: draft.panelCount, batteryCount: draft.batteryCount,
