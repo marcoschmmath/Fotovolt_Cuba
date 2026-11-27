@@ -30,8 +30,12 @@ function RecommendationOption({
         <Stat tone="solar" value={fmtW(recommendation.installedPvW)} label="Campo solar" sub={recommendation.panelCount + ' panel(es)'} />
         <Stat tone="storage" value={fmtKwh(recommendation.installedBatteryKwh)} label="Batería nominal" sub={recommendation.batteryCount + ' módulo(s)'} />
         <Stat value={fmtW(recommendation.inverter.ratedW)} label="Potencia inversor" />
-        <Stat tone="solar" value={(recommendation.rechargeSoc * 100).toFixed(1) + ' %'} label="SOC al finalizar el ciclo" sub="Sin red eléctrica" />
+        <Stat tone="solar" value={(recommendation.coverageWorst * 100).toFixed(1) + ' %'} label="Peor cobertura" sub="24 escenarios normales" />
       </div>
+      <p className="field__hint">
+        SOC de la prueba: {(recommendation.initialSoc * 100).toFixed(1)} % a las 08:00 → {(recommendation.finalSocWorst * 100).toFixed(1)} % mínimo al día siguiente a las 08:00.
+        El SOC final se considera sostenible según el mismo umbral de la evaluación existente.
+      </p>
 
       <div className="recommendation-equipment">
         <div>
@@ -49,7 +53,9 @@ function RecommendationOption({
       </div>
 
       <p className="field__hint">
-        Simulación sin red: {fmtKwh(recommendation.simulatedDemandKwh)} de demanda y {fmtKwh(recommendation.simulatedPvKwh)} de producción fotovoltaica. Energía no suministrada: {fmtKwh(recommendation.unservedKwh)}.
+        Demanda diaria de diseño: {fmtKwh(recommendation.simulatedDemandKwh)} · Energía fotovoltaica aprovechada (mediana): {fmtKwh(recommendation.simulatedPvKwh)}.
+        Energía no suministrada en el peor escenario normal: {fmtKwh(recommendation.unservedKwh)}.
+        La prueba separada de apagón total alcanza {Math.round(recommendation.blackoutCoverage * 100)} % de cobertura y deja {fmtKwh(recommendation.blackoutUnservedKwh)} sin suministrar; se informa aparte, no sustituye el criterio normal de compatibilidad.
       </p>
       {recommendation.estimatedPrice !== undefined && recommendation.currency && (
         <p><strong>Coste estimado de paneles, baterías e inversor:</strong> {recommendation.estimatedPrice.toLocaleString('es-CU')} {recommendation.currency}</p>
@@ -143,7 +149,7 @@ export function Recommendations({
         description="Las propuestas usan los equipos de tu catálogo y se comprueban con una simulación de 24 horas sin red eléctrica."
       />
       <Note level="info" title="Qué significa que una propuesta sea viable">
-        La prueba parte con la batería al 100 % al atardecer, simula un ciclo completo de 24 horas sin red y exige que termine nuevamente al menos al 99,9 %, sin dejar cargas sin suministro. Así se comprueba que la energía solar del día repone lo consumido durante el ciclo. Usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
+        Se reutiliza exactamente la evaluación energética existente: comienza a las 08:00 con SOC inicial igual al mayor entre el 30 % y el SOC mínimo físico de la batería, y termina a las 08:00 del día siguiente. Se comprueban los 24 escenarios de retorno de red. La compatibilidad energética exige cobertura mínima del 99,9 %, SOC final sostenible respecto al inicial y ninguna comida eléctrica sin atender, igual que en Resultados. El apagón total se evalúa y muestra por separado.
         <p className="field__hint">Hipótesis utilizadas: {params.hsp.toFixed(1)} HSP, eficiencia global {Math.round(params.systemEfficiency * 100)} %, sombra/suciedad {Math.round(params.shading * 100)} % y temperatura ambiente {params.ambientC} °C.</p>
       </Note>
       {cards.map((card) => (
