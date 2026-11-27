@@ -6,8 +6,6 @@ import type {
   PanelSpec,
 } from '../core/types';
 import type { GridInput } from '../simulator/grid';
-import type { CommercialConfig } from '../config/commercial';
-import { DEFAULT_COMMERCIAL } from '../config/commercial';
 import {
   DEFAULT_CUBA_RESIDENTIAL_GRID_LIMIT_W,
   DEFAULT_PARAMS,
@@ -72,12 +70,11 @@ export interface AppState {
   panels: PanelSpec[];
   batteries: BatterySpec[];
   inverters: InverterSpec[];
-  commercial: CommercialConfig;
 }
 
-const KEY = 'calculadora-solar-cuba:v3';
+const KEY = 'calculadora-solar-cuba:v4';
 /** Versión del esquema. Subir aquí obliga a una migración explícita. */
-const SCHEMA_VERSION = 3;
+const SCHEMA_VERSION = 4;
 
 /** Únicos pasos de simulación admitidos (M1). */
 export const SUPPORTED_STEPS = [5, 10, 15, 30, 60] as const;
@@ -381,20 +378,6 @@ function sanitizeSystem(value: unknown, households: HouseholdProfile[], catalogs
   };
 }
 
-/** Datos del instalador: textos saneados, PIN preservado. */
-function sanitizeCommercial(value: unknown, fallback: CommercialConfig): CommercialConfig {
-  const raw = isRecord(value) ? value : {};
-  return {
-    ...fallback,
-    ...(typeof raw.businessName === 'string' ? { businessName: raw.businessName.slice(0, 80) } : {}),
-    ...(typeof raw.installerName === 'string' ? { installerName: raw.installerName.slice(0, 80) } : {}),
-    ...(typeof raw.phone === 'string' ? { phone: raw.phone.slice(0, 20) } : {}),
-    ...(typeof raw.whatsapp === 'string' ? { whatsapp: raw.whatsapp.slice(0, 20) } : {}),
-    ...(typeof raw.pin === 'string' && raw.pin ? { pin: raw.pin.slice(0, 12) } : {}),
-    ...(typeof raw.logoDataUrl === 'string' ? { logoDataUrl: raw.logoDataUrl.slice(0, 400_000) } : {}),
-  };
-}
-
 function sanitizeSnapshot(value: unknown): SimulationSnapshot | null {
   if (!isRecord(value)) return null;
   const metrics = isRecord(value.metrics) ? value.metrics : {};
@@ -462,7 +445,6 @@ export function createInitialState(): AppState {
     activeHouseholdId: '',
     activeInstallationId: null,
     ...catalogs,
-    commercial: { ...DEFAULT_COMMERCIAL },
   };
 }
 
@@ -485,10 +467,11 @@ export function loadState(): AppState {
   const base = createInitialState();
   let parsed: unknown = null;
   try {
-    // La clave cambia con el esquema: se leen también las antiguas (v1/v2)
-    // para poder migrarlas. Si existe la nueva, manda ella.
+    // La clave v4 elimina la configuración comercial heredada. Se siguen leyendo
+    // v3 y anteriores para conservar viviendas, instalaciones y simulaciones.
     const raw =
       localStorage.getItem(KEY) ??
+      localStorage.getItem('calculadora-solar-cuba:v3') ??
       localStorage.getItem('calculadora-solar-cuba:v1') ??
       localStorage.getItem('calculadora-solar-cuba:v2');
     if (raw) parsed = migrate(JSON.parse(raw) as Record<string, unknown>);
@@ -519,7 +502,7 @@ export function loadState(): AppState {
 
   const storedVersion = typeof parsed.version === 'number' ? parsed.version : 1;
 
-  // ── Migración v1/v2 → v3 ──
+  // ── Migración v1/v2 → v3/v4; v3 ya contiene hogares e instalaciones. ──
   //  · Los perfiles de equipo (o los electrodomésticos sueltos) se convierten
   //    en hogares completos, con sus electrodomésticos intactos.
   //  · Se crea UNA instalación por hogar con el equipo que tenía seleccionado
@@ -625,7 +608,6 @@ export function loadState(): AppState {
     panels,
     batteries,
     inverters,
-    commercial: sanitizeCommercial(parsed.commercial, base.commercial),
     version: SCHEMA_VERSION,
   };
 }
@@ -633,6 +615,19 @@ export function loadState(): AppState {
 export function saveState(state: AppState): void {
   try {
     localStorage.setItem(KEY, JSON.stringify({ ...state, version: SCHEMA_VERSION }));
+    // Una vez guardada correctamente la nueva estructura, se retiran las
+    // claves antiguas que aún podían contener la configuración editable anterior.
+    for (const legacyKey of [
+      'calculadora-solar-cuba:v1',
+      'calculadora-solar-cuba:v2',
+      'calculadora-solar-cuba:v3',
+    ]) {
+      try {
+        localStorage.removeItem(legacyKey);
+      } catch {
+        // Una clave antigua que no pueda borrarse no invalida el nuevo guardado.
+      }
+    }
   } catch {
     // Modo privado o cuota agotada: la aplicación sigue funcionando en memoria.
   }
@@ -642,7 +637,7 @@ export function clearState(): void {
   try {
     // La clave cambia de versión: se limpian también las antiguas para no
     // dejar datos obsoletos que puedan confundir.
-    for (const key of ['calculadora-solar-cuba:v1', 'calculadora-solar-cuba:v2']) {
+    for (const key of ['calculadora-solar-cuba:v1', 'calculadora-solar-cuba:v2', 'calculadora-solar-cuba:v3']) {
       try {
         localStorage.removeItem(key);
       } catch {

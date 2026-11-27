@@ -9,6 +9,7 @@ import { createInitialState, isSupportedStep, loadState, saveState } from './sto
  */
 
 const KEY_V3 = 'calculadora-solar-cuba:v3';
+const KEY_V4 = 'calculadora-solar-cuba:v4';
 const KEY_V1 = 'calculadora-solar-cuba:v1';
 
 class MemoryStorage implements Storage {
@@ -60,7 +61,7 @@ function appliance(id: string, over: Record<string, unknown> = {}) {
   };
 }
 
-describe('persistencia (esquema v3: hogares e instalaciones)', () => {
+describe('persistencia (esquema v4: hogares e instalaciones sin configuración comercial)', () => {
   beforeEach(() => {
     storage = new MemoryStorage();
     vi.stubGlobal('localStorage', storage);
@@ -243,16 +244,45 @@ describe('persistencia (esquema v3: hogares e instalaciones)', () => {
     expect(loadState().installations[0].params.stepMinutes).toBe(15);
   });
 
+  it('migra v3 y descarta la configuración comercial y el PIN heredados', () => {
+    storage.setItem(
+      KEY_V3,
+      JSON.stringify({
+        version: 3,
+        households: [],
+        installations: [],
+        simulations: [],
+        panels: [],
+        batteries: [],
+        inverters: [],
+        commercial: {
+          businessName: 'Nombre antiguo editable',
+          phone: '+5300000000',
+          pin: '1234',
+        },
+      }),
+    );
+
+    const state = loadState();
+    expect('commercial' in state).toBe(false);
+
+    saveState(state);
+    const saved = JSON.parse(storage.getItem(KEY_V4) as string);
+    expect(saved.version).toBe(4);
+    expect('commercial' in saved).toBe(false);
+    expect(storage.getItem(KEY_V3)).toBeNull();
+  });
+
   it('guarda con la versión actual y tolera la cuota agotada', () => {
     storage.failSetItem = true;
     expect(() => saveState(createInitialState())).not.toThrow();
     storage.failSetItem = false;
     saveState(createInitialState());
-    expect(JSON.parse(storage.getItem(KEY_V3) as string).version).toBe(3);
+    expect(JSON.parse(storage.getItem(KEY_V4) as string).version).toBe(4);
   });
 
   it('no rompe con JSON inválido', () => {
-    storage.setItem(KEY_V3, '{no es json');
+    storage.setItem(KEY_V4, '{no es json');
     expect(() => loadState()).not.toThrow();
     expect(loadState().households).toEqual([]);
   });

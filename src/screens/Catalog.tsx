@@ -305,9 +305,6 @@ function PromptCard() {
 export function Catalog() {
   const { state, patch } = useApp();
   const [kind, setKind] = useState<Kind>('panels');
-  const [unlocked, setUnlocked] = useState(false);
-  const [pinInput, setPinInput] = useState('');
-  const [pinError, setPinError] = useState(false);
   const [editing, setEditing] = useState<Draft | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const clipboard = useClipboard();
@@ -325,13 +322,6 @@ export function Catalog() {
     : '';
   const isNew = editing !== null && editingId === null;
   const errors = editing ? validateDraft(kind, editing) : [];
-
-  function tryUnlock() {
-    if (pinInput === state.commercial.pin) {
-      setUnlocked(true);
-      setPinError(false);
-    } else setPinError(true);
-  }
 
   function save() {
     if (!editing || errors.length > 0) return;
@@ -375,6 +365,9 @@ export function Catalog() {
       <SectionTitle eyebrow="Tus equipos" title="Equipos que piensas comprar" description="Yo no vendo equipos: sólo monto lo que tú elijas. Añade aquí los datos básicos que conozcas de los modelos que vas a comprar. Los detalles técnicos avanzados son opcionales y pueden completarse después. Todo se guarda en este teléfono." />
 
       <PromptCard />
+      <Note level="info" title="Catálogo personal de este dispositivo">
+        Puedes añadir, editar o quitar modelos para adaptar tus simulaciones. Estos cambios se guardan únicamente en este navegador: no modifican el catálogo inicial, la información pública del instalador ni lo que ven otros usuarios.
+      </Note>
       <Toast message={clipboard.message} tone={clipboard.error ? 'error' : 'info'} />
 
       <div className="segmented" role="group" aria-label="Tipo de equipo">
@@ -383,26 +376,7 @@ export function Catalog() {
         ))}
       </div>
 
-      {!unlocked ? (
-        <Panel tone="paper" style={{ marginTop: '1rem' }}>
-          <div className="row"><Icon name="lock" size={19} /><strong>Edición protegida</strong></div>
-          <p style={{ color: 'var(--muted)', fontSize: '.82rem' }}>Introduce el PIN local para añadir o modificar equipos. Puedes cambiarlo en la sección Contacto.</p>
-          <div className="row">
-            <input type="password" inputMode="numeric" value={pinInput} placeholder="PIN" aria-label="PIN de administración" onChange={(e) => { setPinInput(e.target.value); setPinError(false); }} style={{ maxWidth: '8rem' }} />
-            <Button onClick={tryUnlock}>Desbloquear</Button>
-          </div>
-          {pinError && <Note level="error">PIN incorrecto.</Note>}
-        </Panel>
-      ) : (
-        <Panel tone="green" style={{ marginTop: '1rem' }}>
-          <div className="row--between row">
-            <span className="row"><Icon name="check" size={18} /> Edición desbloqueada</span>
-            <Button variant="quiet" onClick={() => setUnlocked(false)}>Bloquear</Button>
-          </div>
-        </Panel>
-      )}
-
-      {unlocked && editing && (
+      {editing && (
         <Panel tone="paper">
           <h3>{editingId ? 'Editar equipo' : 'Nuevo equipo'}</h3>
           <div className="selected-item__grid">
@@ -513,7 +487,7 @@ export function Catalog() {
         </Panel>
       )}
 
-      {unlocked && !editing && (
+      {!editing && (
         <Button full icon="plus" onClick={() => setEditing(newDraft(kind))}>Añadir modelo manualmente</Button>
       )}
 
@@ -551,12 +525,10 @@ export function Catalog() {
                   </div>
                 </div>
               </div>
-              {unlocked && (
-                <div className="row" style={{ marginTop: '.7rem' }}>
-                  <Button variant="quiet" icon="settings" onClick={() => { setEditingId(item.id); setEditing(toDraft(kind, item)); }}>Editar</Button>
-                  <Button variant="danger" icon="trash" onClick={() => remove(item.id)} disabled={items.length <= 1}>Eliminar</Button>
-                </div>
-              )}
+              <div className="row" style={{ marginTop: '.7rem' }}>
+                <Button variant="quiet" icon="settings" onClick={() => { setEditingId(item.id); setEditing(toDraft(kind, item)); }}>Editar</Button>
+                <Button variant="danger" icon="trash" onClick={() => remove(item.id)} disabled={items.length <= 1}>Eliminar</Button>
+              </div>
               {item.note && <p style={{ fontSize: '.72rem', color: 'var(--muted)', margin: '.6rem 0 0' }}>{item.note}</p>}
             </Panel>
           );

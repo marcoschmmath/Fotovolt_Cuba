@@ -111,7 +111,7 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
       </div>
 
       <div className="home-proof" aria-label="Ventajas de Solar Cuba">
-        <span><Icon name="bolt" size={20} />Funciona offline</span>
+        <span><Icon name="bolt" size={20} />Sin registro</span>
         <span><Icon name="shield" size={20} />Pensado para Cuba</span>
         <span><Icon name="grid" size={20} />Escenarios reales</span>
       </div>

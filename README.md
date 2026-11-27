@@ -33,15 +33,18 @@ carga funciona sin conexión y todos los cálculos se ejecutan en el dispositivo
 Si publicas una actualización, incrementa `VERSION` en `public/sw.js` para
 renovar la caché.
 
-## Configuración comercial (antes de publicar)
+## Información pública del instalador
 
-Edita `src/domain/config/commercial.ts` o, desde la propia app, abre
-**Contacto → Configuración del instalador** (PIN local inicial: `1234`).
+Los datos de contacto se definen en `src/domain/config/installerContact.ts`.
+Sustituye allí el marcador de teléfono por el número real con prefijo
+internacional `+53`. La misma información alimenta los botones de llamada,
+WhatsApp y compartir contacto. No existe una pantalla pública para editarla ni
+se guarda en el almacenamiento local de los visitantes.
 
-- Nombre comercial e instalador
-- Teléfono y WhatsApp con formato cubano (el botón se activa solo con un número real)
-- Servicios, zonas y logotipo
-- PIN local de administración
+Para cambiar la información del sitio oficial hay que modificar el código,
+subir un commit al repositorio autorizado y dejar que Cloudflare Pages publique
+la nueva versión. Los visitantes pueden hacer forks o copias propias del
+proyecto, pero eso no modifica el sitio oficial.
 
 El resumen de «Solicitar presupuesto» se abre en `https://wa.me/...` con
 consumo diario, potencia simultánea, autonomía, paneles, batería, inversor y
@@ -59,8 +62,9 @@ Si no se conoce un parámetro, la propia pantalla muestra un prompt listo para
 copiar en Google o en una IA: pide la tabla de especificaciones y exige indicar
 la fuente y marcar como «no verificado» lo que no conste en la ficha.
 
-El PIN local desbloquea la edición (mismo PIN que Contacto). Los precios son
-opcionales y sólo aparecen si los configuras (USD o CUP).
+Cada visitante puede personalizar su catálogo local: añadir, editar o quitar equipos.
+Los cambios se guardan en su propio navegador y no alteran el catálogo inicial ni
+la información pública del instalador. Los precios son opcionales (USD o CUP).
 
 ## Perfiles de equipos
 
@@ -88,7 +92,7 @@ src/
     calculator/    Energía, batería, PV, inversor, dimensionamiento y comparación
     simulator/     Simulación temporal, escenarios, red, análisis y ofertas
     catalog/       Catálogo de electrodomésticos
-    config/        Configuración comercial
+    config/        Datos públicos de contacto
     persistence/   Almacenamiento local versionado
   app/             Contexto de estado, hook de cálculo, routing e install prompt
   ui/              Iconos SVG, componentes y gráficos (sin dependencias de charts)
