@@ -1472,3 +1472,29 @@ body { background: #f6f5ef; }
   line-height: 1.45;
 }
 .system-data-guide__list strong { color: var(--forest-700); }
+
+/* Propuestas automáticas: ficha técnica legible en móvil y escritorio. */
+.recommendation-equipment {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+  margin: 0.9rem 0;
+}
+.recommendation-equipment > div {
+  min-width: 0;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--paper);
+}
+.recommendation-equipment strong { display: block; font-size: 0.82rem; }
+.recommendation-equipment p {
+  margin: 0.3rem 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 640px) {
+  .recommendation-equipment { grid-template-columns: 1fr; }
+}
