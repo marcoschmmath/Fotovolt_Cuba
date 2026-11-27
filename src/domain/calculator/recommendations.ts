@@ -7,7 +7,7 @@ import type {
 import type { HouseholdProfile } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
 import { householdForRecommendation, type RecommendationTierId } from '../household/recommendationProfile';
-import { analyzeEnergy, peakDesignW, type EnergyBreakdown } from './energy';
+import { analyzeEnergy, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
 import { batteryCountFor, requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkInverterCompatibility } from './inverter';
@@ -313,8 +313,8 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
             if (panel.isReference || battery.isReference || inverter.isReference) {
               warnings.push('La combinación incluye al menos un equipo de referencia. Sustituye sus datos por los de la ficha técnica del modelo que vayas a comprar.');
             }
-            if (simulation.totals.cookingMealsSubstituted > 0) {
-              warnings.push('La simulación respeta el combustible alternativo declarado para algunas comidas.');
+            if (usual.scenarios.some((scenario) => scenario.cookingMealsSubstituted > 0)) {
+              warnings.push('La evaluación usual utiliza el combustible alternativo declarado para algunas comidas, tal como está configurado en el perfil de vivienda.');
             }
 
             const price = optionPrice(panel, panelCount, battery, batteryCount, inverter);
