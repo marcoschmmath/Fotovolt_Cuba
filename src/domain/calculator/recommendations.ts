@@ -7,13 +7,12 @@ import type {
 import type { HouseholdProfile } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
 import { householdForRecommendation, type RecommendationTierId } from '../household/recommendationProfile';
-import { analyzeEnergy, intervalCount, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
+import { analyzeEnergy, peakDesignW, type EnergyBreakdown } from './energy';
 import { batteryCountFor, requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkInverterCompatibility } from './inverter';
 import { checkBalancedArrayConfiguration } from './pv';
-import { buildEnergySystemConfig } from '../simulator/bridge';
-import { simulate } from '../simulator/engine';
+import { evaluateSystem } from '../simulator/scenarioGrid';
 
 export type { RecommendationTierId } from '../household/recommendationProfile';
 
@@ -65,7 +64,17 @@ export interface SolarRecommendation {
   requiredPeakW: number;
   simulatedDemandKwh: number;
   simulatedPvKwh: number;
-  rechargeSoc: number;
+  /** SOC de partida que usa scenarioGrid (30 % o el mínimo físico si es mayor). */
+  initialSoc: number;
+  /** Menor SOC final entre los 24 escenarios de retorno de red. */
+  finalSocWorst: number;
+  /** Cobertura mínima de los 24 escenarios de retorno de red. */
+  coverageWorst: number;
+  energySustainable: boolean;
+  cookingMealsUnmetWorst: number;
+  /** Prueba independiente de apagón total; no sustituye el criterio normal de compatibilidad. */
+  blackoutCoverage: number;
+  blackoutUnservedKwh: number;
   unservedKwh: number;
   technicalStatus: 'verified' | 'partial';
   warnings: string[];
@@ -90,11 +99,12 @@ export interface RecommendationInput {
 interface CandidateSearchInput extends RecommendationInput {
   tier: RecommendationTier;
   scenarioHousehold: HouseholdProfile;
+  /** Demanda de electrodomésticos, igual que la que usa Result.tsx en el chequeo técnico. */
+  energy: EnergyBreakdown;
+  /** Demanda diaria incluyendo las actividades de cocina para dimensionar energía. */
   sizingEnergy: EnergyBreakdown;
 }
 
-const FULL_SOC_TOLERANCE = 0.999;
-const ENERGY_TOLERANCE_KWH = 1e-6;
 const MAX_PANEL_COUNT = 200;
 const MAX_BATTERY_COUNT = 100;
 const EXTRA_BATTERY_MODULES_TO_TRY = 3;
@@ -197,12 +207,11 @@ function sortCandidates(candidates: SolarRecommendation[]): SolarRecommendation[
 }
 
 function findTierRecommendations(input: CandidateSearchInput): SolarRecommendation[] {
-  const { household, tier, scenarioHousehold, params, sizingEnergy } = input;
+  const { household, tier, scenarioHousehold, params, energy, sizingEnergy } = input;
   if (!hasDeclaredLoad(scenarioHousehold)) return [];
 
-  const requiredContinuousW = sizingEnergy.peakSimultaneousW * tier.inverterMargin;
-  const requiredPeakW = peakDesignW(sizingEnergy);
-  const gridAvailable = new Array<boolean>(intervalCount(params)).fill(false);
+  const requiredContinuousW = energy.peakSimultaneousW * tier.inverterMargin;
+  const requiredPeakW = peakDesignW(energy);
   const recommendations: SolarRecommendation[] = [];
 
   const panels = input.panels
@@ -279,31 +288,23 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               createdAt: new Date(0).toISOString(),
               updatedAt: new Date(0).toISOString(),
             };
-            const config = buildEnergySystemConfig({
+            // Reutiliza el evaluador oficial de la app. Éste ejecuta los 24
+            // escenarios de retorno de red y el apagón total, siempre desde
+            // las 08:00 y con el SOC inicial max(30 %, SOC mínimo físico).
+            // El criterio normal es exactamente el de Result.tsx.
+            const evaluation = evaluateSystem({
               household: scenarioHousehold,
               system,
               panel,
               battery,
               inverter,
-              gridAvailable,
             });
-            const simulation = simulate(config, {
-              startHour: 18,
-              startSoc: 1,
-              cooking: {
-                activities: scenarioHousehold.activities,
-                mode: household.cooking.allowFlexibleTiming ? 'flexible' : 'usual',
-                substitution: household.cooking.substitution,
-                hasFuel: household.cooking.fuelKind !== null && household.cooking.fuelConfirmed,
-              },
-            });
-
-            const rechargeSoc = simulation.totals.finalSoc;
-            if (
-              !simulation.valid ||
-              rechargeSoc < FULL_SOC_TOLERANCE ||
-              simulation.totals.unservedKwh > ENERGY_TOLERANCE_KWH
-            ) continue;
+            const usual = evaluation.behaviors.usual;
+            const energyCompatible =
+              usual.coverageWorst >= 0.999 &&
+              usual.energySustainable &&
+              usual.cookingMealsUnmetWorst === 0;
+            if (!energyCompatible) continue;
 
             const warnings: string[] = [];
             if (technical.status === 'partial' || arrayCheck.status === 'insufficient') {
@@ -331,10 +332,16 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               targetBatteryKwh,
               targetPvW,
               requiredPeakW,
-              simulatedDemandKwh: simulation.totals.demandKwh,
-              simulatedPvKwh: simulation.totals.pvProducedKwh,
-              rechargeSoc,
-              unservedKwh: simulation.totals.unservedKwh,
+              simulatedDemandKwh: sizingEnergy.dailyKwh,
+              simulatedPvKwh: usual.pvKwhMedian,
+              initialSoc: usual.initialSoc,
+              finalSocWorst: Math.min(...usual.scenarios.map((scenario) => scenario.finalSoc), 1),
+              coverageWorst: usual.coverageWorst,
+              energySustainable: usual.energySustainable,
+              cookingMealsUnmetWorst: usual.cookingMealsUnmetWorst,
+              blackoutCoverage: usual.blackout.coverage,
+              blackoutUnservedKwh: usual.blackout.unservedKwh,
+              unservedKwh: usual.unservedKwhWorst,
               technicalStatus: technical.status === 'verified' ? 'verified' : 'partial',
               warnings,
               ...price,
@@ -362,6 +369,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
       ...input,
       tier,
       scenarioHousehold,
+      energy,
       sizingEnergy: sizing.energy,
     })[0] ?? null;
 
@@ -373,7 +381,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
           ? 'No hay equipos con prioridad crítica o importante. Ajusta las prioridades de tu vivienda para generar esta opción.'
           : 'Esta vivienda todavía no tiene consumos suficientes para dimensionar una instalación.';
     } else if (!recommendation) {
-      reason = 'No se encontró una combinación del catálogo que cubra las cargas y devuelva la batería a al menos el 99,9 % de su SOC inicial tras un ciclo de 24 horas sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
+      reason = 'No se encontró una combinación que supere el mismo criterio energético utilizado en Result.tsx: cobertura mínima del 99,9 %, SOC final sostenible en los 24 escenarios de retorno de red y ninguna comida eléctrica sin atender. Revisa las fichas técnicas o amplía el catálogo.';
     }
     return { tier, recommendation, reason };
   });
