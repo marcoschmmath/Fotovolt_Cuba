@@ -80,7 +80,10 @@ export function Recommendations({
   const { state, patch } = useApp();
   const household = state.households.find((item) => item.id === (householdId ?? state.activeHouseholdId)) ??
     state.households.find((item) => item.id === householdId) ?? null;
-  const params = state.installations.find((item) => item.householdProfileId === household?.id)?.params ?? systemParams();
+  const params = useMemo(
+    () => state.installations.find((item) => item.householdProfileId === household?.id)?.params ?? systemParams(),
+    [state.installations, household?.id],
+  );
 
   const cards = useMemo(() => {
     if (!household) return [];
