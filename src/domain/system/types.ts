@@ -5,6 +5,7 @@
 
 import type { DesignParams } from '../core/types';
 import { DEFAULT_PARAMS } from '../core/defaults';
+import type { RecommendationTierId } from '../household/recommendationProfile';
 
 export interface SystemConfiguration {
   id: string;
@@ -19,6 +20,8 @@ export interface SystemConfiguration {
   installationType: 'hybrid' | 'offgrid';
   /** Hipótesis de cálculo propias de la instalación (sol, eficiencias, DoD…). */
   params: DesignParams;
+  /** Capa de consumo para las propuestas autogeneradas; ausente en diseños manuales. */
+  recommendationTier?: RecommendationTierId;
   /** Origen del dato: diseñado en la app o introducido desde una oferta. */
   origin: 'user' | 'offer';
   createdAt: string;
