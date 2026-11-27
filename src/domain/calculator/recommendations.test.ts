@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { generateSolarRecommendations } from './recommendations';
+import { batteryPack } from './battery';
 import type { HouseholdProfile } from '../household/types';
 import { DEFAULT_COOKING, defaultCookingActivities } from '../household/types';
 import { appliance, battery, inverter, panel, params } from '../../test/fixtures';
@@ -63,7 +64,8 @@ describe('generateSolarRecommendations', () => {
       expect(recommendation.inverter.id).toBe('ref-inv-5000');
       expect(recommendation.panelCount).toBeGreaterThan(0);
       expect(recommendation.batteryCount).toBeGreaterThan(0);
-      expect(recommendation.initialSoc).toBeGreaterThanOrEqual(0.30);
+      const pack = batteryPack(recommendation.battery, recommendation.batteryCount, params());
+      expect(recommendation.initialSoc).toBeCloseTo(Math.max(0.30, pack.minSoc), 10);
       expect(recommendation.initialSoc).toBeLessThanOrEqual(1);
       expect(recommendation.coverageWorst).toBeGreaterThanOrEqual(0.999);
       expect(recommendation.energySustainable).toBe(true);
