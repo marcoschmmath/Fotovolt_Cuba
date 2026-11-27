@@ -13,7 +13,7 @@ import { Recommendations } from './screens/Recommendations';
 
 const NAV: Array<{ path: string; label: string; icon: IconName; activePaths: string[] }> = [
   { path: '/', label: 'Inicio', icon: 'home', activePaths: ['/'] },
-  { path: '/hogar', label: 'Simular', icon: 'calculator', activePaths: ['/hogar', '/instalacion', '/simulacion'] },
+  { path: '/hogar', label: 'Simular', icon: 'calculator', activePaths: ['/hogar', '/instalacion', '/recomendaciones', '/simulacion'] },
   { path: '/resultado', label: 'Resultados', icon: 'grid', activePaths: ['/resultado', '/oferta'] },
   { path: '/mas', label: 'Más', icon: 'layers', activePaths: ['/mas', '/catalogo', '/contacto'] },
 ];
