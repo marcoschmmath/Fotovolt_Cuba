@@ -4,6 +4,18 @@ import { Icon } from './icons';
 const CHART_W = 340;
 const CHART_H = 150;
 
+/**
+ * Hora legible. Antes se hacía `floor(h)` + `round((h%1)*60)` por separado y
+ * un intervalo como 23,999 h imprimía «23:60». Aquí se redondean los minutos
+ * totales y se normaliza el acarreo a la hora siguiente.
+ */
+export function formatHour(hour: number): string {
+  const totalMinutes = Math.round(hour * 60);
+  const h = Math.floor(totalMinutes / 60) % 24;
+  const m = totalMinutes % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
+}
+
 function points(values: number[], max: number, width = CHART_W, height = CHART_H) {
   const count = Math.max(1, values.length - 1);
   return values.map((value, index) => {
@@ -22,12 +34,12 @@ function areaPath(pts: ReadonlyArray<readonly [number, number]>, height = CHART_
   return `${toPath(pts)} L${pts[pts.length - 1][0].toFixed(1)},${height} L${pts[0][0].toFixed(1)},${height} Z`;
 }
 
-export function GenerationChart({ intervals }: { intervals: IntervalResult[] }) {
+export function GenerationChart({ intervals, startHour = 0 }: { intervals: IntervalResult[]; startHour?: number }) {
   const pv = points(intervals.map((i) => i.pvAcW), Math.max(1, ...intervals.map((i) => Math.max(i.pvAcW, i.demandW))) * 1.1);
   const demand = points(intervals.map((i) => i.demandW), Math.max(1, ...intervals.map((i) => Math.max(i.pvAcW, i.demandW))) * 1.1);
   return (
     <div className="chart">
-      <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 22}`} role="img" aria-label="Generación fotovoltaica y demanda eléctrica a lo largo del día">
+      <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 22}`} role="img" aria-label={`Generación fotovoltaica y demanda eléctrica desde ${formatHour(startHour)} hasta ${formatHour(startHour + 24)} del día siguiente`}>
         <defs>
           <linearGradient id="pvFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--lime)" stopOpacity="0.55" />
@@ -42,7 +54,7 @@ export function GenerationChart({ intervals }: { intervals: IntervalResult[] }) 
         <path d={toPath(demand)} className="chart__line chart__line--demand" />
         {[0, 6, 12, 18, 24].map((h) => (
           <text key={h} x={(h / 24) * CHART_W} y={CHART_H + 16} className="chart__axis" textAnchor={h === 0 ? 'start' : h === 24 ? 'end' : 'middle'}>
-            {String(h).padStart(2, '0')}
+            {formatHour(startHour + h)}
           </text>
         ))}
       </svg>
@@ -54,12 +66,12 @@ export function GenerationChart({ intervals }: { intervals: IntervalResult[] }) 
   );
 }
 
-export function SocChart({ intervals, minSoc }: { intervals: IntervalResult[]; minSoc: number }) {
+export function SocChart({ intervals, minSoc, startHour = 0 }: { intervals: IntervalResult[]; minSoc: number; startHour?: number }) {
   const max = 1;
   const pts = points(intervals.map((i) => i.soc), max);
   return (
     <div className="chart">
-      <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 22}`} role="img" aria-label="Estado de carga de la batería a lo largo del día">
+      <svg viewBox={`0 0 ${CHART_W} ${CHART_H + 22}`} role="img" aria-label={`Estado de carga de la batería desde ${formatHour(startHour)} hasta ${formatHour(startHour + 24)} del día siguiente`}>
         <defs>
           <linearGradient id="socFill" x1="0" y1="0" x2="0" y2="1">
             <stop offset="0%" stopColor="var(--storage)" stopOpacity="0.45" />
@@ -74,7 +86,7 @@ export function SocChart({ intervals, minSoc }: { intervals: IntervalResult[]; m
         <path d={toPath(pts)} className="chart__line chart__line--soc" />
         {[0, 6, 12, 18, 24].map((h) => (
           <text key={h} x={(h / 24) * CHART_W} y={CHART_H + 16} className="chart__axis" textAnchor={h === 0 ? 'start' : h === 24 ? 'end' : 'middle'}>
-            {String(h).padStart(2, '0')}
+            {formatHour(startHour + h)}
           </text>
         ))}
       </svg>
@@ -122,11 +134,21 @@ interface FlowProps {
 /** Pieza central de la pantalla de resultados: flujo de energía en un instante. */
 export function EnergyFlow({ interval, playing, onToggle, pvW, batteryKwh, gridOn }: FlowProps) {
   const pv = interval.pvAcW;
-  const toHome = interval.servedW - interval.gridW - interval.batteryDischargeAcW;
+  // Unidades: todo aquí son VATIOS (W), medidos en el mismo instante.
+  //   · `servedW` cubre la demanda; sus fuentes son PV directo, batería y red.
+  //   · `gridW` es importación TOTAL (carga + recarga de batería), así que para
+  //    aislar la parte que alimenta la casa hay que usar `gridToLoadW`. Con
+  //    `gridW` el resultado salía negativo siempre que la red recargaba la
+  //    batería y el SVG acababa con `stroke-width` negativo (M4).
+  const toHome = Math.max(
+    0,
+    interval.servedW - interval.gridToLoadW - interval.batteryDischargeAcW,
+  );
   const toBattery = interval.batteryChargeW;
   const fromBattery = interval.batteryDischargeAcW;
   const fromGrid = interval.gridW;
-  const thickness = (w: number) => 1.5 + Math.min(5, w / 600);
+  // Grosor acotado: nunca negativo ni desproporcionado.
+  const thickness = (w: number) => 1.5 + Math.min(5, Math.max(0, w) / 600);
   const flow = (w: number) => (w > 1 ? 1 : 0.12);
 
   return (
@@ -134,7 +156,7 @@ export function EnergyFlow({ interval, playing, onToggle, pvW, batteryKwh, gridO
       <div className="energy-flow__head">
         <div>
           <span className="eyebrow eyebrow--light">Flujo de energía</span>
-          <h3>{String(Math.floor(interval.hour)).padStart(2, '0')}:{String(Math.round((interval.hour % 1) * 60)).padStart(2, '0')} h</h3>
+          <h3>{formatHour(interval.hour)} h</h3>
         </div>
         <button type="button" className="flow-toggle" onClick={onToggle} aria-label={playing ? 'Pausar animación del flujo' : 'Reproducir animación del flujo'}>
           <Icon name={playing ? 'pause' : 'play'} size={17} />

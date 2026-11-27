@@ -74,6 +74,7 @@ export function analyzeBottlenecks(
     battery: config.battery,
     panel: config.panel,
     panelCount: config.panelCount,
+    batteryCount: config.batteryCount,
     continuousW: energy.peakSimultaneousW,
     peakW: peak,
     voltage: config.grid.voltage,
@@ -123,7 +124,7 @@ export function analyzeBottlenecks(
       message: `La red sólo estuvo disponible ${gridHours.toFixed(1)} h. Ese tiempo limita la recarga: comprobar la potencia real de carga del inversor.`,
     });
   }
-  if (peak > config.inverter.surgeW * 0.85) {
+  if (config.inverter.surgeW > 0 && peak > config.inverter.surgeW * 0.85) {
     list.push({
       level: 'warning',
       code: 'SURGE_MARGIN',

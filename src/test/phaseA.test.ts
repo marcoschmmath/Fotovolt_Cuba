@@ -67,7 +67,7 @@ describe('A2 — un único presupuesto de carga compartido (C2)', () => {
     battery: battery({ maxChargeW: 800 }),
     batteryCount: 1,
     grid: grid(
-      { available: new Array(96).fill(true), maxPowerW: 10000, chargerPowerW: 5000 },
+      { available: new Array(96).fill(true), maxPowerW: 10000 },
       p,
     ),
     appliances: [appliance({ powerW: 300, hoursPerDay: 24, schedule: 'custom', startHour: 0 })],
@@ -120,8 +120,13 @@ describe('A3 — un solo DoD/SOC efectivo (C3)', () => {
     const p = params({ dod: 1, minSoc: 0.1 });
     const b = battery({ dod: 0.8 });
     const pack = batteryPack(b, 2, p);
-    expect(pack.minSoc).toBeCloseTo(effectiveMinSoc(p, b), 9);
-    expect(pack.usableKwh).toBeCloseTo(pack.nominalKwh * (1 - effectiveMinSoc(p, b)), 9);
+    // El suelo efectivo es el más restrictivo de los tres (0,2 del DoD).
+    expect(pack.minSoc).toBeCloseTo(0.2, 9);
+    // Invariante físico con valores conocidos: banco nominal 10 kWh, 80 %
+    // utilizable (2 × 5 kWh de plantilla), no una relectura de la fórmula.
+    expect(pack.nominalKwh).toBeCloseTo(10, 9);
+    expect(pack.usableKwh).toBeCloseTo(8, 9);
+    expect(pack.usableKwh).toBeLessThan(pack.nominalKwh);
   });
 });
 
@@ -215,10 +220,9 @@ describe('A7 — strings inviables no proponen PV utilizable (C7/M15)', () => {
       params(),
     );
     expect(check.feasible).toBe(false);
-    expect(check.recommendedSeries).toBeGreaterThanOrEqual(check.minSeries === 0 ? 0 : 0);
-    if (check.recommendedSeries > 0) {
-      expect(check.recommendedSeries).toBeLessThanOrEqual(check.maxSeries);
-    }
+    // C7/M15: sin ventana factible NO se devuelve ninguna configuración.
+    expect(check.recommendedSeries).toBe(0);
+    expect(check.feasible).toBe(false);
   });
 
   it('usablePvLimitW es 0 cuando la comprobación no es factible', () => {

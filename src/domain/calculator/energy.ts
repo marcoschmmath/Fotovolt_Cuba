@@ -5,6 +5,8 @@ export interface DemandInterval {
   hour: number;
   byPriority: Record<Priority, number>;
   totalW: number;
+  /** Potencia media por equipo durante este intervalo; permite explicar la carga. */
+  activeLoads: Array<{ id: string; name: string; powerW: number }>;
 }
 
 export interface EnergyBreakdown {
@@ -163,6 +165,7 @@ export function buildDailyDemand(
   for (let i = 0; i < count; i += 1) {
     const hour = (i + 0.5) * dt;
     const byPriority = emptyPriorityRecord();
+    const activeLoads: DemandInterval['activeLoads'] = [];
     for (const appliance of appliances) {
       if (!appliance || appliance.quantity <= 0) continue;
       const rated = effectivePowerW(appliance, params);
@@ -179,11 +182,15 @@ export function buildDailyDemand(
         } else {
           fraction = appliance.dutyCycle;
         }
-        byPriority[appliance.priority] += rated * appliance.quantity * fraction;
+        const applianceW = rated * appliance.quantity * fraction;
+        byPriority[appliance.priority] += applianceW;
+        if (applianceW > 1e-9) {
+          activeLoads.push({ id: appliance.id, name: appliance.name, powerW: applianceW });
+        }
       }
     }
     const totalW = PRIORITIES.reduce((sum, p) => sum + byPriority[p], 0);
-    intervals.push({ index: i, hour, byPriority, totalW });
+    intervals.push({ index: i, hour, byPriority, totalW, activeLoads });
   }
   return intervals;
 }

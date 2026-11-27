@@ -1,4 +1,25 @@
-node_modules
-dist
-*.tsbuildinfo
+# Dependencias y compilaciones
+node_modules/
+dist/
+coverage/
+
+# Credenciales y configuraciones privadas
+.env
+.env.*
+!.env.example
+
+# Herramientas locales de IA
+.codex/
+.agents/skills/
+
+# Cloudflare local
+.wrangler/
+
+# Archivos del sistema
 .DS_Store
+
+# Local AI agent tooling
+.agents/
+.codex/
+.opencode/
+.wrangler/

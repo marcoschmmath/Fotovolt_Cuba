@@ -9,8 +9,6 @@ export interface GridInput {
   startHour: number;
   maxPowerW: number;
   voltage: 110 | 220 | 'both';
-  allowExport: boolean;
-  chargerPowerW: number;
 }
 
 /**
@@ -46,8 +44,6 @@ export function buildGridModel(input: GridInput, params: DesignParams): GridMode
     available,
     maxPowerW: Math.max(0, input.maxPowerW),
     voltage: input.voltage,
-    allowExport: input.allowExport,
-    chargerPowerW: Math.max(0, input.chargerPowerW),
   };
 }
 

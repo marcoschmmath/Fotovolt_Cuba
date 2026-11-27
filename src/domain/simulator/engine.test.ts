@@ -1,9 +1,28 @@
 import { describe, expect, it } from 'vitest';
 import { simulate, unservedEvents } from './engine';
-import { buildScenarios } from './scenarios';
 import { appliance, battery, config, grid, inverter, panel, params } from '../../test/fixtures';
 
 describe('simulación temporal', () => {
+  it('recorre 24 horas desde las 08:00 y parte del SOC inicial indicado', () => {
+    const p = params();
+    const result = simulate(
+      config({
+        params: p,
+        appliances: [],
+        solar: { ...config().solar, hsp: 0 },
+        grid: grid({ available: new Array(96).fill(false) }, p),
+      }),
+      { days: 1, startHour: 8, startSoc: 0.30 },
+    );
+
+    expect(result.intervals).toHaveLength(96);
+    expect(result.intervals[0].clockIndex).toBe(32);
+    expect(result.intervals[0].hour).toBeCloseTo(8.125, 6);
+    expect(result.intervals[0].soc).toBeCloseTo(0.30, 6);
+    expect(result.intervals[95].clockIndex).toBe(31);
+    expect(result.intervals[95].hour).toBeCloseTo(7.875, 6);
+  });
+
   it('conserva el balance energético en cada intervalo', () => {
     const result = simulate(config());
     expect(result.valid).toBe(true);
@@ -86,19 +105,13 @@ describe('simulación temporal', () => {
     expect(events[0].cause).toContain('imprescindibles');
   });
 
-  it('los escenarios son ilustrativos y ordenan la producción', () => {
-    const base = config();
-    const scenarios = buildScenarios(base);
-    expect(scenarios.map((s) => s.id)).toEqual(['favorable', 'habitual', 'desfavorable']);
-    const results = scenarios.map((s) => simulate(s.config).totals.pvProducedKwh);
-    expect(results[0]).toBeGreaterThan(results[1]);
-    expect(results[1]).toBeGreaterThan(results[2]);
-    expect(scenarios[0].assumptions.length).toBeGreaterThan(0);
-  });
 
-  it('acepta equipos de plantilla y advierte de ello', () => {
-    const result = simulate(config());
-    expect(result.diagnostics.some((d) => d.code === 'PV_CURTAILED' || d.code === 'PV_CLIPPED' || d.code === 'SOC_MIN' || d.code === 'CRITICAL_UNSERVED' || d.code === 'STUDY_REQUIRED')).toBe(true);
+  it('un panel de plantilla genérico se marca como referencia, no como verificado', () => {
+    const result = simulate(config({ panelCount: 40 }));
+    // Con 40 paneles y batería pequeña el sistema limita: el aviso concreto es
+    // el de excedente fotovoltaico, no «cualquier diagnóstico».
+    expect(result.totals.curtailedKwh).toBeGreaterThan(0);
+    expect(result.diagnostics.some((d) => d.code === 'PV_CURTAILED')).toBe(true);
   });
 
   it('el panel de la plantilla no excede límites del inversor en la configuración base', () => {

@@ -2,7 +2,14 @@
 
 PWA (mobile-first) para que una persona en Cuba estime qué instalación
 fotovoltaica necesita: paneles, baterías e inversor, con simulación de
-apagones, comparación de capacidades y contacto directo con el instalador.
+apagones, comparación de instalaciones y contacto directo con el instalador.
+
+**Cómo se usa:** configuras tu **vivienda** una sola vez (equipos, cocina,
+qué necesitas de noche) y después puedes diseñar y comparar tantas
+**instalaciones** como quieras contra ese mismo consumo. Cada simulación
+evalúa **24 horas de retorno de la luz** (ventanas de 3 h, una por hora,
+incluida la que cruza la medianoche) más un **apagón total de 24 h**, con dos
+comportamientos de cocina: el habitual y el flexible.
 
 **Estado:** versión 1 funcional. Los cálculos son estimaciones preliminares y
 no sustituyen un diseño eléctrico ni una visita técnica.
@@ -12,11 +19,11 @@ no sustituyen un diseño eléctrico ni una visita técnica.
 Requiere Node 20+.
 
 ```bash
-npm install
-npm run dev        # desarrollo
-npm test           # 44 pruebas del motor y la simulación
-npm run build      # genera dist/ (PWA lista para desplegar)
-npm run preview    # sirve dist/ localmente
+bun install --frozen-lockfile
+bun run dev        # desarrollo
+bun run test       # 140 pruebas del dominio, la simulación y la persistencia
+bun run build      # genera dist/ (PWA lista para desplegar)
+bun run preview    # sirve dist/ localmente
 ```
 
 Para instalarla en un teléfono Android: sirve `dist/` por HTTPS (o `localhost`

@@ -17,7 +17,7 @@ import {
   dailyRechargeKwh,
   requiredBatteryNominalKwh,
 } from './battery';
-import { checkStringDesign, usablePvLimitW } from './pv';
+import { checkBalancedArrayConfiguration, usablePvLimitW } from './pv';
 import { checkInverterCompatibility } from './inverter';
 
 export interface SizingInput {
@@ -80,10 +80,12 @@ export function chooseInverterAndPanels(input: {
   continuousW: number;
   peakW: number;
   targetPvW: number;
+  batteryCount?: number;
   preferredInverterId?: string;
   diagnostics: Diagnostic[];
 }): { inverter: InverterSpec | null; panelCount: number } {
   const { inverters, panel, battery, params, voltage, continuousW, peakW, targetPvW, preferredInverterId, diagnostics } = input;
+  const batteryCount = Math.max(1, Math.floor(input.batteryCount ?? 1));
   const desiredPanels = Math.ceil(targetPvW / Math.max(1, panel.powerW));
   const candidates = [...inverters].sort((a, b) => {
     if (a.id === preferredInverterId) return -1;
@@ -100,6 +102,7 @@ export function chooseInverterAndPanels(input: {
       battery,
       panel,
       panelCount,
+      batteryCount,
       continuousW,
       peakW,
       voltage,
@@ -137,6 +140,7 @@ export function explainInverterRejections(input: {
   continuousW: number;
   peakW: number;
   panelCount: number;
+  batteryCount?: number;
 }): InverterRejection[] {
   return input.inverters
     .map((inverter) => {
@@ -189,6 +193,7 @@ export function computeSizing(input: SizingInput): SizingResult {
     continuousW,
     peakW,
     targetPvW,
+    batteryCount,
     diagnostics,
   });
 
@@ -198,14 +203,18 @@ export function computeSizing(input: SizingInput): SizingResult {
       battery: input.battery,
       panel: input.panel,
       panelCount,
+      batteryCount,
       continuousW,
       peakW,
       voltage: input.voltage,
       params: input.params,
     });
     diagnostics.push(...check.diagnostics);
-    const string = checkStringDesign(input.panel, inverter, input.params);
-    diagnostics.push(...string.notes.map((n) => ({ level: 'info' as const, code: 'STRING', message: n })));
+    const array = checkBalancedArrayConfiguration(input.panel, inverter, panelCount, input.params);
+    const arrayLevel = array.status === 'incompatible' ? 'error' as const : array.status === 'insufficient' ? 'warning' as const : 'info' as const;
+    diagnostics.push(...(array.violations.length ? array.violations : array.notes).map((message) => ({
+      level: arrayLevel, code: array.status === 'verified' ? 'STRING' : 'STRING_UNVERIFIED', message,
+    })));
   }
 
   if (panelCount * input.panel.powerW < targetPvW) {
@@ -232,6 +241,7 @@ export function computeSizing(input: SizingInput): SizingResult {
     continuousW,
     peakW,
     panelCount,
+    batteryCount,
   });
 
   const config: EnergySystemConfig | null = inverter
@@ -333,6 +343,7 @@ export function buildComparison(input: SizingInput, base: SizingResult): Compare
       continuousW: base.energy.peakSimultaneousW,
       peakW: peakDesignW(base.energy),
       targetPvW: targetPv,
+      batteryCount: 1,
       diagnostics: [],
     });
     if (inverter && panelCount * input.panel.powerW < targetPv) {

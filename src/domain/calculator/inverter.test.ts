@@ -19,6 +19,7 @@ describe('compatibilidad del inversor', () => {
   it('acepta un inversor compatible', () => {
     const check = checkInverterCompatibility({ ...base, inverter: inverter() });
     expect(check.compatible).toBe(true);
+    expect(check.status).toBe('verified');
   });
 
   it('rechaza discrepancia de tensión de la vivienda', () => {
@@ -51,6 +52,44 @@ describe('compatibilidad del inversor', () => {
       battery: battery({ nominalV: 12 }),
     });
     expect(check.diagnostics.some((d) => d.code === 'BATT_VOLTAGE')).toBe(true);
+    expect(check.status).toBe('incompatible');
+  });
+
+
+  it('permite simular con datos básicos aunque falten MPPT y parámetros opcionales', () => {
+    const check = checkInverterCompatibility({
+      ...base,
+      inverter: inverter({
+        surgeW: 0,
+        efficiency: 0,
+        maxPvVoltageV: 0,
+        mppt: [],
+        maxChargeA: 0,
+        maxDischargeA: 0,
+        acVoltages: [],
+      }),
+      battery: battery({ dod: 0, chargeEff: 0, dischargeEff: 0, maxChargeW: 0, maxDischargeW: 0 }),
+    });
+    expect(check.compatible).toBe(true);
+    expect(check.status).toBe('partial');
+    expect(check.diagnostics.some((item) => item.code === 'PV_STRINGS_UNVERIFIED')).toBe(true);
+    expect(check.diagnostics.some((item) => item.code === 'INV_SURGE_UNKNOWN')).toBe(true);
+  });
+
+  it('marca como verificación parcial la tensión de batería desconocida', () => {
+    const check = checkInverterCompatibility({
+      ...base,
+      battery: battery({ nominalV: 0 }),
+    });
+    expect(check.compatible).toBe(true);
+    expect(check.status).toBe('partial');
+    expect(check.diagnostics.some((item) => item.code === 'BATT_VOLTAGE_UNKNOWN')).toBe(true);
+  });
+
+  it('advierte si la vivienda tiene 110/220 V pero el inversor sólo declara una salida', () => {
+    const check = checkInverterCompatibility({ ...base, inverter: inverter({ acVoltages: [220] }), voltage: 'both' });
+    expect(check.compatible).toBe(true);
+    expect(check.diagnostics.some((item) => item.code === 'AC_BOTH_UNVERIFIED')).toBe(true);
   });
 
   it('selecciona el inversor compatible más pequeño', () => {
@@ -59,6 +98,15 @@ describe('compatibilidad del inversor', () => {
     const selected = selectInverter({ ...base, inverters: [big, small] });
     expect(selected.inverter?.id).toBe('small');
     expect(selected.rejected).toHaveLength(1);
+  });
+
+  it('escala el límite de descarga del banco con la cantidad de baterías', () => {
+    const limitedBattery = battery({ maxDischargeW: 3000 });
+    const one = checkInverterCompatibility({ ...base, battery: limitedBattery, batteryCount: 1 });
+    const two = checkInverterCompatibility({ ...base, battery: limitedBattery, batteryCount: 2 });
+
+    expect(one.diagnostics.some((item) => item.code === 'BATT_DISCHARGE_W')).toBe(true);
+    expect(two.diagnostics.some((item) => item.code === 'BATT_DISCHARGE_W')).toBe(false);
   });
 
   it('no recomienda ningún inversor si todos fallan el arranque', () => {

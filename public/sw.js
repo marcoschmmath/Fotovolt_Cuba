@@ -2,7 +2,7 @@
  * Service worker sin dependencias. Funciona con Rutas relativas (base './').
  * Objetivo: después de la primera carga, la aplicación abre y calcula sin red.
  */
-const VERSION = 'solar-cuba-v6';
+const VERSION = 'solar-cuba-v7';
 const CACHE = VERSION + '-shell';
 
 const CORE = [
@@ -23,15 +23,15 @@ function scopeUrl(path) {
 
 async function precache() {
   const cache = await caches.open(CACHE);
-  await Promise.allSettled(CORE.map((path) => cache.add(scopeUrl(path))));
+  await Promise.allSettled(CORE.map((path) => cache.add(scopeUrl(path)).catch(() => {})));
   try {
     const response = await cache.match(scopeUrl('index.html'));
-    if (!response) return;
+    if (!response || !response.ok) return;
     const html = await response.text();
     const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css|woff2|png|svg))"/g)]
       .map((match) => match[1])
       .filter((url) => !url.startsWith('http') && !url.startsWith('data:'));
-    await Promise.allSettled(assets.map((url) => cache.add(scopeUrl(url))));
+    await Promise.allSettled(assets.map((url) => cache.add(scopeUrl(url)).catch(() => {})));
   } catch (_) {
     // Si no se puede leer el HTML, el caché en tiempo de ejecución cubre el resto.
   }
@@ -59,8 +59,12 @@ self.addEventListener('fetch', (event) => {
     event.respondWith(
       fetch(request)
         .then((response) => {
-          const copy = response.clone();
-          caches.open(CACHE).then((cache) => cache.put(scopeUrl('index.html'), copy));
+          // M5: nunca se guarda una respuesta fallida (un 500 sustituía el
+          // index.html válido en caché y rompía la app offline).
+          if (response && response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE).then((cache) => cache.put(scopeUrl('index.html'), copy)).catch(() => {});
+          }
           return response;
         })
         .catch(async () => (await caches.match(scopeUrl('index.html'))) || Response.error()),
@@ -74,7 +78,7 @@ self.addEventListener('fetch', (event) => {
         .then((response) => {
           if (response && response.ok) {
             const copy = response.clone();
-            caches.open(CACHE).then((cache) => cache.put(request, copy));
+            caches.open(CACHE).then((cache) => cache.put(request, copy)).catch(() => {});
           }
           return response;
         })

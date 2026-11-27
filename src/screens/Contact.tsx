@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useApp } from '../app/AppContext';
 import type { CommercialConfig } from '../domain/config/commercial';
 import { phoneConfigured, telHref, whatsappHref } from '../domain/config/commercial';
-import { Badge, Button, Note, Panel, SectionTitle, TextField } from '../ui/components';
+import { Badge, Button, Note, Panel, SectionTitle, TextField, Toast, useClipboard } from '../ui/components';
 import { Icon } from '../ui/icons';
 
 export function Contact() {
@@ -11,6 +11,8 @@ export function Contact() {
   const [pinInput, setPinInput] = useState('');
   const [pinError, setPinError] = useState(false);
   const [draft, setDraft] = useState<CommercialConfig | null>(null);
+  const [feedback, setFeedback] = useState<{ tone: 'warning' | 'success'; message: string } | null>(null);
+  const clipboard = useClipboard();
   const commercial = state.commercial;
 
   function set<K extends keyof CommercialConfig>(key: K, value: CommercialConfig[K]) {
@@ -22,22 +24,34 @@ export function Contact() {
       setDraft({ ...commercial });
       setUnlocked(true);
       setPinError(false);
+      setFeedback(null);
     } else setPinError(true);
   }
 
   function save() {
     if (!draft) return;
-    if (!draft.pin.trim()) return;
+    // Antes ambos fallos volvían en silencio: el usuario creía haber guardado.
+    if (!draft.pin.trim()) {
+      setFeedback({ tone: 'warning', message: 'El PIN local no puede quedar vacío: es la única protección de esta sección.' });
+      return;
+    }
     patch({ commercial: draft });
     setUnlocked(false);
     setPinInput('');
+    setFeedback({ tone: 'success', message: 'Datos del instalador guardados en este dispositivo.' });
   }
 
   function onLogo(file?: File) {
     if (!file) return;
-    if (file.size > 400_000) return;
+    if (file.size > 400_000) {
+      setFeedback({ tone: 'warning', message: 'El logotipo ocupa demasiado. Usa una imagen de menos de 400 kB.' });
+      return;
+    }
     const reader = new FileReader();
-    reader.onload = () => set('logoDataUrl', String(reader.result));
+    reader.onload = () => {
+      set('logoDataUrl', String(reader.result));
+      setFeedback({ tone: 'success', message: 'Logotipo cargado. Pulsa «Guardar cambios» para conservarlo.' });
+    };
     reader.readAsDataURL(file);
   }
 
@@ -65,7 +79,7 @@ export function Contact() {
           <Button variant="dark" icon="whatsapp" disabled={!phoneConfigured(commercial.whatsapp)} onClick={() => window.open(whatsappHref(commercial.whatsapp), '_blank', 'noopener')}>WhatsApp</Button>
           <Button variant="dark" icon="share" onClick={() => {
             const text = `${commercial.businessName}. ${commercial.services} Contacto: ${commercial.phone}`;
-            void navigator.clipboard?.writeText(text);
+            clipboard.copy(text);
           }}>Compartir contacto</Button>
         </div>
         {!phoneConfigured(commercial.phone) && <Note level="warning">El número de teléfono sigue siendo el valor de ejemplo. Desbloquea la configuración y pon tu número real.</Note>}
@@ -106,7 +120,9 @@ export function Contact() {
             </>
           )
         )}
+        {feedback && <Note level={feedback.tone === 'success' ? 'success' : 'warning'}>{feedback.message}</Note>}
       </Panel>
+      <Toast message={clipboard.message} tone={clipboard.error ? 'error' : 'info'} />
 
       <Note level="info" title="Sin datos personales">
         La calculadora no pide nombre, correo ni registro. La información de contacto la escribe el instalador una sola vez en este dispositivo.

@@ -1,84 +1,150 @@
-import { useEffect, useState } from 'react';
-import { useApp } from './app/AppContext';
-import { useCalculation } from './app/useCalculation';
+import { useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './ui/icons';
 import { Home } from './screens/Home';
-import { Wizard } from './screens/Wizard';
+import { HouseholdWizard } from './screens/HouseholdWizard';
+import { SystemWizard } from './screens/SystemWizard';
+import { Simulation } from './screens/Simulation';
 import { Result } from './screens/Result';
 import { Catalog } from './screens/Catalog';
 import { Contact } from './screens/Contact';
 import { OfferCheck } from './screens/OfferCheck';
+import { More } from './screens/More';
+
+const NAV: Array<{ path: string; label: string; icon: IconName; activePaths: string[] }> = [
+  { path: '/', label: 'Inicio', icon: 'home', activePaths: ['/'] },
+  { path: '/hogar', label: 'Simular', icon: 'calculator', activePaths: ['/hogar', '/instalacion', '/simulacion'] },
+  { path: '/resultado', label: 'Resultados', icon: 'grid', activePaths: ['/resultado', '/oferta'] },
+  { path: '/mas', label: 'Más', icon: 'layers', activePaths: ['/mas', '/catalogo', '/contacto'] },
+];
+
+const parse = (hash: string) => {
+  const [path, query = ''] = hash.replace(/^#/, '').split('?');
+  const params = new URLSearchParams(query);
+  const pasoRaw = Number(params.get('paso'));
+  return {
+    path: path || '/',
+    id: params.get('id'),
+    hogar: params.get('hogar'),
+    nuevo: params.get('nuevo'),
+    paso: Number.isInteger(pasoRaw) && pasoRaw >= 1 ? pasoRaw : undefined,
+  };
+};
+
+const prefersReducedMotion = () => window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
 
 function useHashRoute() {
-  const read = () => window.location.hash.replace(/^#/, '') || '/';
+  const read = () => parse(window.location.hash || '#/');
   const [route, setRoute] = useState(read);
+  const first = useRef(true);
+  const programmatic = useRef(false);
+
   useEffect(() => {
-    const onChange = () => setRoute(read());
+    const onChange = () => {
+      setRoute(read());
+      if (first.current) {
+        first.current = false;
+        return;
+      }
+      const main = document.querySelector<HTMLElement>('main.app__body');
+      main?.focus({ preventScroll: true });
+      if (programmatic.current) {
+        window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      }
+      programmatic.current = false;
+    };
     window.addEventListener('hashchange', onChange);
     return () => window.removeEventListener('hashchange', onChange);
   }, []);
+
   const navigate = (path: string) => {
-    if (read() === path) window.scrollTo({ top: 0, behavior: 'smooth' });
-    else window.location.hash = path;
+    const target = parse(`#${path}`);
+    if (read().path === target.path && read().id === target.id && read().hogar === target.hogar) {
+      window.scrollTo({ top: 0, behavior: prefersReducedMotion() ? 'auto' : 'smooth' });
+      return;
+    }
+    programmatic.current = true;
+    window.location.hash = path;
   };
-  useEffect(() => { window.scrollTo(0, 0); }, [route]);
   return { route, navigate };
 }
 
-const NAV: Array<{ path: string; label: string; icon: IconName }> = [
-  { path: '/', label: 'Inicio', icon: 'home' },
-  { path: '/calcular', label: 'Calcular', icon: 'calculator' },
-  { path: '/resultado', label: 'Resultado', icon: 'layers' },
-  { path: '/catalogo', label: 'Equipos', icon: 'catalog' },
-  { path: '/contacto', label: 'Contacto', icon: 'contact' },
-];
+function headerTitle(path: string): string {
+  const titles: Record<string, string> = {
+    '/hogar': 'Mi vivienda',
+    '/instalacion': 'Sistema fotovoltaico',
+    '/simulacion': 'Simulación',
+    '/resultado': 'Resultados',
+    '/oferta': 'Comprobar una oferta',
+    '/catalogo': 'Catálogo de equipos',
+    '/contacto': 'Contacto',
+    '/mas': 'Más opciones',
+  };
+  return titles[path] ?? 'Solar Cuba';
+}
+
+function backTarget(path: string, id: string | null): string {
+  if (path === '/simulacion' && id) return `/instalacion?id=${id}`;
+  if (path === '/resultado' && id) return `/simulacion?id=${id}`;
+  if (path === '/instalacion') return '/';
+  if (path === '/catalogo' || path === '/contacto' || path === '/oferta') return '/mas';
+  return '/';
+}
 
 export default function App() {
-  const { state } = useApp();
   const { route, navigate } = useHashRoute();
-  const calculation = useCalculation(state);
-  const dark = route === '/resultado';
+  const isHome = route.path === '/';
 
   return (
-    <div className={`app ${dark ? 'app--dark' : ''}`}>
-      <header className={`topbar ${dark ? 'topbar--dark' : ''}`}>
-        {route !== '/' ? (
-          <button type="button" className="topbar__back" onClick={() => navigate('/')} aria-label="Volver al inicio"><Icon name="chevron" size={18} /></button>
-        ) : null}
-        <div className="topbar__brand">
-          <span className="topbar__mark"><Icon name="sun" size={18} /></span>
-          Solar Cuba
+    <div className="app">
+      <header className={`topbar ${isHome ? 'topbar--home' : 'topbar--inner-page'}`}>
+        <div className="topbar__inner">
+          {isHome ? (
+            <>
+              <span className="topbar__brand">
+                <span className="topbar__mark"><Icon name="sun" size={20} /></span>
+                <strong>Solar Cuba</strong>
+              </span>
+              <span className="topbar__spacer" />
+              <button type="button" className="topbar__link" onClick={() => navigate('/oferta')}>
+                <Icon name="shield" size={16} /> Oferta
+              </button>
+            </>
+          ) : (
+            <>
+              <button type="button" className="topbar__back topbar__back--icon" onClick={() => navigate(backTarget(route.path, route.id))} aria-label="Volver">
+                <Icon name="chevron" size={22} />
+              </button>
+              <strong className="topbar__page-title">{headerTitle(route.path)}</strong>
+              <span className="topbar__spacer" />
+            </>
+          )}
         </div>
-        <span className="topbar__spacer" />
-        {route !== '/oferta' && (
-          <button type="button" className="topbar__back topbar__action" onClick={() => navigate('/oferta')} aria-label="Comprobar una oferta" title="Comprobar una oferta">
-            <Icon name="shield" size={18} /><span className="topbar__tag">Oferta</span>
-          </button>
-        )}
       </header>
 
-      <main className="app__body">
-        {route === '/' && <Home navigate={navigate} />}
-        {route === '/calcular' && <Wizard calculation={calculation} navigate={navigate} />}
-        {route === '/resultado' && <Result calculation={calculation} navigate={navigate} />}
-        {route === '/catalogo' && <Catalog />}
-        {route === '/contacto' && <Contact />}
-        {route === '/oferta' && <OfferCheck />}
-        {!['/', '/calcular', '/resultado', '/catalogo', '/contacto', '/oferta'].includes(route) && <Home navigate={navigate} />}
+      <main className="app__body" tabIndex={-1}>
+        {route.path === '/' && <Home navigate={navigate} />}
+        {route.path === '/hogar' && <HouseholdWizard navigate={navigate} householdId={route.id ?? undefined} initialStep={route.paso} />}
+        {route.path === '/instalacion' && <SystemWizard navigate={navigate} installationId={route.id ?? undefined} initialHouseholdId={route.hogar ?? undefined} />}
+        {route.path === '/simulacion' && <Simulation navigate={navigate} installationId={route.id ?? undefined} />}
+        {route.path === '/resultado' && <Result navigate={navigate} installationId={route.id ?? undefined} />}
+        {route.path === '/oferta' && <OfferCheck navigate={navigate} />}
+        {route.path === '/catalogo' && <Catalog />}
+        {route.path === '/contacto' && <Contact />}
+        {route.path === '/mas' && <More navigate={navigate} />}
       </main>
 
       <nav className="bottom-nav" aria-label="Navegación principal">
         {NAV.map((item) => {
-          const active = route === item.path || (item.path === '/calcular' && route === '/oferta');
+          const active = item.activePaths.includes(route.path);
           return (
             <button
               type="button"
               key={item.path}
-              className={`bottom-nav__item ${item.path === '/calcular' ? 'bottom-nav__item--main' : ''} ${active ? 'is-active' : ''}`}
+              className={`bottom-nav__item ${active ? 'is-active' : ''}`}
               aria-current={active ? 'page' : undefined}
               onClick={() => navigate(item.path)}
             >
-              <Icon name={item.icon} size={item.path === '/calcular' ? 22 : 20} />
+              <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
             </button>
           );

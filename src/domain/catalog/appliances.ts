@@ -13,6 +13,8 @@ export interface ApplianceTemplate {
   profile: Appliance['profile'];
   quantity?: number;
   btuPerHour?: number;
+  /** EER declarado usado para estimar la potencia eléctrica desde BTU/h. */
+  eer?: number;
   note?: string;
 }
 
@@ -21,6 +23,7 @@ export const CATEGORIES = [
   'Climatización',
   'Entretenimiento',
   'Iluminación',
+  'Comunicaciones',
   'Cocina',
   'Otros',
 ];
@@ -34,10 +37,13 @@ export const APPLIANCE_TEMPLATES: ApplianceTemplate[] = [
   { name: 'Frigorífico', icon: 'fridge', category: 'Refrigeración', powerW: 200, hoursPerDay: 24, schedule: 'both', priority: 'critical', surgeFactor: 3.5, dutyCycle: 0.4, profile: 'cyclic' },
   { name: 'Congelador', icon: 'fridge', category: 'Refrigeración', powerW: 180, hoursPerDay: 24, schedule: 'both', priority: 'critical', surgeFactor: 3.5, dutyCycle: 0.45, profile: 'cyclic' },
   { name: 'Aire acondicionado convencional', icon: 'ac', category: 'Climatización', powerW: 1200, hoursPerDay: 6, schedule: 'day', priority: 'important', surgeFactor: 4.5, dutyCycle: 0.85, profile: 'modulated', btuPerHour: 12000, note: 'Potencia estimada desde BTU/h. Corrígela con la placa si la conoces.' },
-  { name: 'Split inverter', icon: 'ac', category: 'Climatización', powerW: 900, hoursPerDay: 6, schedule: 'day', priority: 'important', surgeFactor: 2.5, dutyCycle: 0.7, profile: 'modulated', btuPerHour: 12000, note: 'Potencia estimada desde BTU/h. Corrígela con la placa si la conoces.' },
+  // El EER declarado (16) y la potencia mostrada (12000/16 = 750 W) coinciden
+  // con lo que simula el motor: la tarjeta y el cálculo no pueden discrepar.
+  { name: 'Split inverter', icon: 'ac', category: 'Climatización', powerW: 750, hoursPerDay: 6, schedule: 'day', priority: 'important', surgeFactor: 2.5, dutyCycle: 0.7, profile: 'modulated', btuPerHour: 12000, eer: 16, note: 'Potencia estimada desde BTU/h con EER 16. Corrígela con la placa si la conoces.' },
   { name: 'Televisión', icon: 'tv', category: 'Entretenimiento', powerW: 120, hoursPerDay: 4, schedule: 'night', priority: 'discretionary', surgeFactor: 1, dutyCycle: 1, profile: 'constant' },
   { name: 'Ordenador', icon: 'catalog', category: 'Entretenimiento', powerW: 100, hoursPerDay: 4, schedule: 'day', priority: 'important', surgeFactor: 1, dutyCycle: 1, profile: 'constant' },
   { name: 'Router', icon: 'router', category: 'Entretenimiento', powerW: 15, hoursPerDay: 24, schedule: 'both', priority: 'critical', surgeFactor: 1, dutyCycle: 1, profile: 'constant' },
+  { name: 'Carga de teléfonos móviles', icon: 'phone', category: 'Comunicaciones', powerW: 10, hoursPerDay: 2, schedule: 'night', priority: 'important', surgeFactor: 1, dutyCycle: 1, profile: 'constant', quantity: 2, note: 'Estimación de potencia media por teléfono durante la carga. Ajusta la cantidad y las horas según los móviles de la vivienda.' },
   { name: 'Bombillas LED', icon: 'bulb', category: 'Iluminación', powerW: 10, hoursPerDay: 5, schedule: 'night', priority: 'important', surgeFactor: 1, dutyCycle: 1, profile: 'constant', quantity: 4 },
   { name: 'Microondas', icon: 'microwave', category: 'Cocina', powerW: 900, hoursPerDay: 0.5, schedule: 'day', priority: 'discretionary', surgeFactor: 1, dutyCycle: 1, profile: 'constant' },
   { name: 'Cocina eléctrica', icon: 'stove', category: 'Cocina', powerW: 2000, hoursPerDay: 1, schedule: 'day', priority: 'discretionary', surgeFactor: 1, dutyCycle: 1, profile: 'constant' },
@@ -63,6 +69,7 @@ export function templateToAppliance(template: ApplianceTemplate, uid: string): A
     dutyCycle: template.dutyCycle,
     profile: template.profile,
     btuPerHour: template.btuPerHour,
+    eer: template.eer,
     powerIsEstimate: Boolean(template.btuPerHour),
     note: template.note,
   };

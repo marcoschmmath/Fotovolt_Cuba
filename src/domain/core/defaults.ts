@@ -7,6 +7,14 @@ import type {
 } from './types';
 
 /**
+ * Valor provisional centralizado del límite de importación residencial. La
+ * interfaz no lo pregunta al usuario normal; sólo el instalador, en modo
+ * avanzado, puede corregirlo tras verificar la conexión y las protecciones.
+ * NO es una norma oficial: es una hipótesis de cálculo.
+ */
+export const DEFAULT_CUBA_RESIDENTIAL_GRID_LIMIT_W = 3000;
+
+/**
  * Valores por defecto. Todos son HIPÓTESIS DE CÁLCULO, no datos medidos.
  * La interfaz debe mostrarlos como supuestos editables.
  */
@@ -35,9 +43,11 @@ export const DEFAULT_PARAMS: DesignParams = {
   shading: 0.05,
   acEer: 10,
   cyclicCycleMinutes: 20,
-  gridMaxPowerW: 3000,
-  gridChargePowerW: 1500,
-  allowExport: false,
+  /**
+   * Límite provisional de importación de la vivienda (W). NO es una norma
+   * oficial: es una hipótesis centralizada que el instalador puede corregir.
+   */
+  gridMaxPowerW: DEFAULT_CUBA_RESIDENTIAL_GRID_LIMIT_W,
 };
 
 export function solarFromParams(params: DesignParams): SolarInputs {
@@ -110,6 +120,7 @@ export const REFERENCE_INVERTERS: InverterSpec[] = [
     batteryVoltageV: 48,
     maxChargeA: 100,
     maxDischargeA: 100,
+    gridChargerW: 1500,
     acVoltages: [110, 220],
     isReference: true,
     note: 'Plantilla genérica. Verificar límites MPPT, carga y tensión en la ficha real.',

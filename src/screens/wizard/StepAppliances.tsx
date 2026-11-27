@@ -1,11 +1,9 @@
 import { useState } from 'react';
-import type { Calculation } from '../../app/useCalculation';
-import { useApp } from '../../app/AppContext';
 import { APPLIANCE_TEMPLATES, CATEGORIES, templateToAppliance, type ApplianceTemplate } from '../../domain/catalog/appliances';
-import type { Appliance, Priority, Schedule } from '../../domain/core/types';
+import type { Appliance, DesignParams, Priority, Schedule } from '../../domain/core/types';
 import { uid } from '../../domain/persistence/storage';
-import { effectivePowerW, peakDesignW } from '../../domain/calculator/energy';
-import { Badge, Button, Chip, Field, NumberField, Note, Panel, Segmented, TextField, fmtW } from '../../ui/components';
+import { analyzeEnergy, effectivePowerW, peakDesignW } from '../../domain/calculator/energy';
+import { Badge, Button, Chip, Field, NumberField, Note, Panel, Segmented, fmtW } from '../../ui/components';
 import { Icon, type IconName } from '../../ui/icons';
 
 const PRIORITY_OPTIONS: Array<{ value: Priority; label: string }> = [
@@ -21,10 +19,9 @@ const SCHEDULE_OPTIONS: Array<{ value: Schedule; label: string }> = [
   { value: 'custom', label: 'Otro' },
 ];
 
-function ApplianceEditor({ appliance, onChange, onRemove }: { appliance: Appliance; onChange: (patch: Partial<Appliance>) => void; onRemove: () => void }) {
-  const { state } = useApp();
+function ApplianceEditor({ appliance, params, onChange, onRemove }: { appliance: Appliance; params: DesignParams; onChange: (patch: Partial<Appliance>) => void; onRemove: () => void }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
-  const input = effectivePowerW(appliance, state.params);
+  const input = effectivePowerW(appliance, params);
   return (
     <div className="selected-item">
       <div className="selected-item__head">
@@ -56,7 +53,7 @@ function ApplianceEditor({ appliance, onChange, onRemove }: { appliance: Applian
         </div>
         {appliance.btuPerHour && (
           <Note level="warning" title="Potencia estimada desde BTU/h">
-            {appliance.btuPerHour.toLocaleString('es-CU')} BTU/h ÷ EER {appliance.eer ?? state.params.acEer} ≈ {Math.round(input)} W. Es una aproximación: corrígela con la potencia de la placa técnica.
+            {appliance.btuPerHour.toLocaleString('es-CU')} BTU/h ÷ EER {appliance.eer ?? params.acEer} ≈ {Math.round(input)} W. Es una aproximación: corrígela con la potencia de la placa técnica.
             <div className="row" style={{ marginTop: '.5rem' }}>
               <NumberField label="BTU/h" value={appliance.btuPerHour} min={0} step={1000} onChange={(v) => onChange({ btuPerHour: v, powerIsEstimate: true })} />
             </div>
@@ -88,100 +85,51 @@ function ApplianceEditor({ appliance, onChange, onRemove }: { appliance: Applian
   );
 }
 
-function ProfileBar({ onSwitch }: { onSwitch: () => void }) {
-  const { state, patch } = useApp();
-  const [mode, setMode] = useState<'new' | 'rename' | 'duplicate' | null>(null);
-  const [name, setName] = useState('');
-  const active = state.profiles.find((p) => p.id === state.activeProfileId) ?? state.profiles[0];
-
-  function switchTo(id: string) {
-    const profile = state.profiles.find((p) => p.id === id);
-    if (!profile) return;
-    patch({ activeProfileId: id, appliances: profile.appliances.map((a) => ({ ...a })) });
-    onSwitch();
-  }
-
-  function apply() {
-    const label = name.trim();
-    if (!label) return;
-    if (mode === 'rename') {
-      patch({ profiles: state.profiles.map((p) => (p.id === active.id ? { ...p, name: label } : p)) });
-    } else {
-      const created = {
-        id: uid('profile'),
-        name: label,
-        appliances: mode === 'duplicate' ? active.appliances.map((a) => ({ ...a, id: uid('app') })) : [],
-        createdAt: new Date().toISOString(),
-      };
-      patch({ profiles: [...state.profiles, created], activeProfileId: created.id, appliances: created.appliances });
-      onSwitch();
-    }
-    setMode(null);
-    setName('');
-  }
-
-  function remove() {
-    if (state.profiles.length <= 1) return;
-    const remaining = state.profiles.filter((p) => p.id !== active.id);
-    patch({ profiles: remaining, activeProfileId: remaining[0].id, appliances: remaining[0].appliances });
-    onSwitch();
-  }
-
-  return (
-    <Panel tone="paper">
-      <div className="row row--between">
-        <div>
-          <strong>Perfil de equipos</strong>
-          <span className="field__hint">Guarda una casa o escenario distinto sin borrar los demás.</span>
-        </div>
-        <Badge tone="storage">{state.profiles.length} perfil(es)</Badge>
-      </div>
-      <Field label="Perfil activo" htmlFor="profile-select">
-        <select id="profile-select" value={active.id} onChange={(e) => switchTo(e.target.value)}>
-          {state.profiles.map((p) => <option key={p.id} value={p.id}>{p.name} · {p.appliances.length} equipos</option>)}
-        </select>
-      </Field>
-      <div className="chip-grid">
-        <Chip onClick={() => { setMode('new'); setName(''); }} icon="plus">Nuevo</Chip>
-        <Chip onClick={() => { setMode('duplicate'); setName(`${active.name} (copia)`); }} icon="layers">Duplicar</Chip>
-        <Chip onClick={() => { setMode('rename'); setName(active.name); }} icon="settings">Renombrar</Chip>
-        <Chip onClick={remove} icon="trash">Eliminar</Chip>
-      </div>
-      {mode && (
-        <div style={{ marginTop: '.8rem' }}>
-          <TextField label={mode === 'rename' ? 'Nuevo nombre' : 'Nombre del perfil'} value={name} onChange={setName} placeholder="Ej.: Casa de la Habana" />
-          <div className="wizard-actions">
-            <Button variant="quiet" onClick={() => setMode(null)}>Cancelar</Button>
-            <Button icon="check" onClick={apply} disabled={!name.trim()}>Guardar perfil</Button>
-          </div>
-        </div>
-      )}
-    </Panel>
-  );
-}
-
-export function StepAppliances({ calculation, onNext }: { calculation: Calculation; onNext: () => void }) {
-  const { state, patch } = useApp();
-  const [category, setCategory] = useState(CATEGORIES[0]);
+export function StepAppliances({
+  appliances,
+  params,
+  onChange,
+  onNext,
+}: {
+  appliances: Appliance[];
+  params: DesignParams;
+  onChange: (appliances: Appliance[] | ((current: Appliance[]) => Appliance[])) => void;
+  onNext: () => void;
+}) {
+  const [category, setCategory] = useState<string>('Todos');
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [manual, setManual] = useState({ name: '', powerW: 600, hoursPerDay: 4, schedule: 'day' as Schedule, priority: 'important' as Priority });
-  const templates = APPLIANCE_TEMPLATES.filter((t) => t.category === category);
-  const energy = calculation.sizing.energy;
+  const hasMobileCharging = appliances.some((appliance) => appliance.name === 'Carga de teléfonos móviles');
+  const templates = category === 'Todos'
+    ? APPLIANCE_TEMPLATES
+    : APPLIANCE_TEMPLATES.filter((t) => t.category === category);
+
+  // Delegamos la transformación funcional al padre para que React la aplique
+  // sobre el estado más reciente, incluso ante varios cambios rápidos.
+  const patch = (change: (current: Appliance[]) => Appliance[]) => onChange(change);
+
+  const energy = analyzeEnergy(appliances, params);
   const peak = peakDesignW(energy);
 
   function toggleTemplate(template: ApplianceTemplate) {
     const created = templateToAppliance(template, uid('app'));
+    const existing = appliances.find((a) => a.name === template.name && !a.custom);
     patch((current) => {
-      const existing = current.appliances.find((a) => a.name === template.name && !a.custom);
-      if (existing) return { appliances: current.appliances.filter((a) => a.id !== existing.id) };
-      return { appliances: [...current.appliances, created] };
+      const found = current.find((a) => a.name === template.name && !a.custom);
+      if (found) return current.filter((a) => a.id !== found.id);
+      return [...current, created];
     });
-    setExpanded(created.id);
+    // Antes se fijaba `expanded` al equipo nuevo TAMBIÉN al desmarcarlo, y el
+    // id quedaba apuntando a un equipo que ya no existe.
+    if (existing) setExpanded((current) => (current === existing.id ? null : current));
+    else setExpanded(created.id);
   }
 
   function update(id: string, value: Partial<Appliance>) {
-    patch({ appliances: state.appliances.map((a) => (a.id === id ? { ...a, ...value } : a)) });
+    // Forma funcional: dos cambios rápidos (p. ej. cantidad y potencia) no se
+    // pisan entre ellos por un `state` obsoleto del render.
+    patch((current) => current.map((a) => (a.id === id ? { ...a, ...value } : a)));
   }
 
   function addManual() {
@@ -202,7 +150,7 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
       profile: 'constant',
       custom: true,
     };
-    patch({ appliances: [...state.appliances, created] });
+    patch((current) => [...current, created]);
     setExpanded(created.id);
     setAdding(false);
     setManual({ name: '', powerW: 600, hoursPerDay: 4, schedule: 'day', priority: 'important' });
@@ -211,22 +159,25 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
   return (
     <>
       <div className="section-title">
-        <span className="eyebrow">Paso 1 de 4</span>
+        <span className="eyebrow">Tu consumo</span>
         <h2>¿Qué equipos tienes en casa?</h2>
         <p>Elige los que más usas. Después puedes cambiar la potencia, las horas y la prioridad de cada uno.</p>
       </div>
 
-      <ProfileBar onSwitch={() => setExpanded(null)} />
-
       <Panel tone="paper">
+        <Note level="info" title="Carga de teléfonos móviles">
+          {hasMobileCharging
+            ? 'Esta vivienda ya incluye una estimación para dos móviles: 10 W por teléfono durante 2 horas al día. Puedes cambiar la cantidad, la potencia y el horario.'
+            : 'Añade la carga de móviles desde «Comunicaciones». La plantilla estima 10 W por teléfono durante 2 horas al día; puedes modificarla o quitarla.'}
+        </Note>
         <div className="cat-tabs" role="group" aria-label="Categorías de electrodomésticos">
-          {CATEGORIES.map((item) => (
+          {['Todos', ...CATEGORIES].map((item) => (
             <Chip key={item} active={category === item} onClick={() => setCategory(item)}>{item}</Chip>
           ))}
         </div>
         <div className="appliance-grid">
           {templates.map((template) => {
-            const selected = state.appliances.some((a) => a.name === template.name && !a.custom);
+            const selected = appliances.some((a) => a.name === template.name && !a.custom);
             return (
               <button
                 type="button"
@@ -238,7 +189,7 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
                 <span className="app-tile__icon"><Icon name={template.icon as IconName} size={21} /></span>
                 <span className="app-tile__name">{template.name}</span>
                 <span className="app-tile__power">{template.powerW} W · {template.hoursPerDay} h</span>
-                {selected && <span className="app-tile__check"><Icon name="check" size={15} /></span>}
+                <span className="app-tile__check">{selected && <Icon name="check" size={15} />}</span>
               </button>
             );
           })}
@@ -268,13 +219,13 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
         )}
       </Panel>
 
-      {state.appliances.length > 0 && (
+      {appliances.length > 0 && (
         <Panel tone="transparent">
           <div className="panel__head">
-            <h3>Tus equipos ({state.appliances.length})</h3>
+            <h3>Tus equipos ({appliances.length})</h3>
             <span className="field__hint">Toca uno para editarlo</span>
           </div>
-          {state.appliances.map((appliance) => (
+          {appliances.map((appliance) => (
             <div key={appliance.id}>
               <button
                 type="button"
@@ -288,15 +239,16 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
                   <span>{appliance.name} <small style={{ color: 'var(--muted)' }}>×{appliance.quantity}</small></span>
                 </span>
                 <span className="row">
-                  <span className="mono" style={{ fontSize: '.8rem' }}>{fmtW(effectivePowerW(appliance, state.params) * appliance.quantity)}</span>
+                  <span className="mono" style={{ fontSize: '.8rem' }}>{fmtW(effectivePowerW(appliance, params) * appliance.quantity)}</span>
                   <Icon name="chevron" size={14} style={{ transform: expanded === appliance.id ? 'rotate(90deg)' : 'none' }} />
                 </span>
               </button>
               {expanded === appliance.id && (
                 <ApplianceEditor
                   appliance={appliance}
+                  params={params}
                   onChange={(value) => update(appliance.id, value)}
-                  onRemove={() => patch({ appliances: state.appliances.filter((a) => a.id !== appliance.id) })}
+                  onRemove={() => patch((current) => current.filter((a) => a.id !== appliance.id))}
                 />
               )}
             </div>
@@ -304,7 +256,7 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
         </Panel>
       )}
 
-      {state.appliances.some((a) => a.powerIsEstimate) && (
+      {appliances.some((a) => a.powerIsEstimate) && (
         <Note level="warning" title="Hay potencias aproximadas">
           Algunos aires acondicionados se estimaron a partir de BTU/h con un EER configurable. Sustituye ese valor por la potencia de la placa para afinar el resultado.
         </Note>
@@ -323,11 +275,11 @@ export function StepAppliances({ calculation, onNext }: { calculation: Calculati
       </div>
 
       <div className="wizard-actions">
-        <Button onClick={onNext} disabled={state.appliances.length === 0} icon="chevron" trailing>
+        <Button onClick={onNext} disabled={appliances.length === 0} icon="chevron" trailing>
           Continuar
         </Button>
       </div>
-      {state.appliances.length === 0 && <Note level="info">Añade al menos un equipo para continuar.</Note>}
+      {appliances.length === 0 && <Note level="info">Añade al menos un equipo para continuar.</Note>}
     </>
   );
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkStringDesign, irradianceAt, pvDcPowerAt, usablePvLimitW } from './pv';
+import { checkBalancedArrayConfiguration, checkStringDesign, irradianceAt, pvDcPowerAt, usablePvLimitW } from './pv';
 import { inverter, panel, params, battery } from '../../test/fixtures';
 import { solarFromParams } from '../core/defaults';
 
@@ -55,6 +55,105 @@ describe('modelo fotovoltaico', () => {
     const limit = usablePvLimitW(inverter(), panel(), p);
     expect(limit).toBeGreaterThan(0);
     expect(Number.isFinite(limit)).toBe(true);
+  });
+
+
+  it('encuentra una distribución uniforme de strings y equilibra los MPPT', () => {
+    const check = checkBalancedArrayConfiguration(
+      panel(),
+      inverter({
+        maxPvInputW: 8000,
+        mppt: [
+          { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 },
+          { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 },
+        ],
+      }),
+      12,
+      params(),
+    );
+    expect(check.status).toBe('verified');
+    expect(check.panelsPerString * check.totalStrings).toBe(12);
+    expect(check.stringsPerMppt).toEqual([2, 2]);
+  });
+
+  it('permite usar sólo los MPPT que admiten la misma serie', () => {
+    const check = checkBalancedArrayConfiguration(
+      panel(),
+      inverter({
+        maxPvInputW: 8000,
+        mppt: [
+          { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 },
+          { maxVoltageV: 300, minVoltageV: 180, maxCurrentA: 40, maxPowerW: 6000 },
+        ],
+      }),
+      6,
+      params(),
+    );
+    expect(check.status).toBe('verified');
+    expect(check.stringsPerMppt[0]).toBeGreaterThan(0);
+    expect(check.stringsPerMppt[1]).toBe(0);
+  });
+
+  it('no declara incompatible si un MPPT incompleto podría admitir los strings restantes', () => {
+    const check = checkBalancedArrayConfiguration(
+      panel(),
+      inverter({
+        maxPvInputW: 8000,
+        mppt: [
+          { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 16, maxPowerW: 1800 },
+          { maxVoltageV: 0, minVoltageV: 0, maxCurrentA: 0, maxPowerW: 0 },
+        ],
+      }),
+      6,
+      params(),
+    );
+    expect(check.status).toBe('insufficient');
+    expect(check.feasible).toBe(false);
+  });
+
+  it('reparte cinco strings de forma equilibrada entre tres MPPT', () => {
+    const check = checkBalancedArrayConfiguration(
+      panel(),
+      inverter({
+        maxPvInputW: 10000,
+        mppt: [0, 1, 2].map(() => ({ maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 })),
+      }),
+      15,
+      params(),
+    );
+    expect(check.status).toBe('verified');
+    expect(check.panelsPerString * check.totalStrings).toBe(15);
+    expect(check.stringsPerMppt).toEqual([2, 2, 1]);
+  });
+
+  it('mantiene el dimensionamiento energético con el límite PV anunciado si faltan datos MPPT', () => {
+    const model = inverter({ maxPvInputW: 7200, maxPvVoltageV: 0, mppt: [] });
+    expect(usablePvLimitW(model, panel(), params())).toBe(7200);
+  });
+
+  it('limita el dimensionamiento cuando los MPPT documentados no admiten más strings', () => {
+    const model = inverter({
+      maxPvInputW: 9000,
+      maxPvVoltageV: 450,
+      mppt: [
+        { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 22, maxPowerW: 3000 },
+        { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 22, maxPowerW: 3000 },
+      ],
+    });
+    const limit = usablePvLimitW(model, panel(), params());
+    expect(limit).toBeGreaterThan(0);
+    expect(limit).toBeLessThanOrEqual(6000);
+  });
+
+  it('no inventa límites MPPT cuando faltan y deja la comprobación pendiente', () => {
+    const check = checkBalancedArrayConfiguration(
+      panel(),
+      inverter({ mppt: [], maxPvVoltageV: 0 }),
+      6,
+      params(),
+    );
+    expect(check.status).toBe('insufficient');
+    expect(check.feasible).toBe(false);
   });
 
   it('la plantilla de batería declara su carácter orientativo', () => {

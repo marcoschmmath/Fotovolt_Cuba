@@ -14,8 +14,14 @@ createRoot(document.getElementById('root')!).render(
 
 if ('serviceWorker' in navigator) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('./sw.js').catch(() => {
-      // Sin service worker la aplicación sigue funcionando con conexión.
-    });
+    // Alcance explícito derivado de la URL del documento: funciona igual
+    // servido desde la raíz que desde un subdirectorio.
+    const scriptUrl = new URL('sw.js', document.baseURI);
+    const scopeUrl = new URL('./', document.baseURI);
+    navigator.serviceWorker
+      .register(scriptUrl, { scope: scopeUrl.pathname })
+      .catch(() => {
+        // Sin service worker la aplicación sigue funcionando con conexión.
+      });
   });
 }

@@ -100,6 +100,12 @@ export interface InverterSpec {
   batteryVoltageV: number;
   maxChargeA: number;
   maxDischargeA: number;
+  /**
+   * Potencia del cargador AC→DC interno (red → batería) en W, declarada por el
+   * fabricante. Ausente o 0 = el inversor NO puede cargar la batería desde la
+   * red: la simulación nunca lo dará por hecho.
+   */
+  gridChargerW?: number;
   acVoltages: Array<110 | 220>;
   price?: number;
   currency?: 'USD' | 'CUP';
@@ -165,18 +171,20 @@ export interface DesignParams {
   /** EER orientativo para estimar vatios eléctricos a partir de BTU/h. */
   acEer: number;
   cyclicCycleMinutes: number;
+  /**
+   * Límite provisional de importación de la vivienda (W). Valor centralizado
+   * `DEFAULT_CUBA_RESIDENTIAL_GRID_LIMIT_W = 3000`: no es una norma oficial,
+   * sólo una hipótesis revisable por el instalador.
+   */
   gridMaxPowerW: number;
-  gridChargePowerW: number;
-  allowExport: boolean;
 }
 
 export interface GridModel {
   /** Disponibilidad de red por intervalo; longitud = intervalos del día. */
   available: boolean[];
+  /** Potencia máxima de importación de la vivienda (W). */
   maxPowerW: number;
   voltage: 110 | 220 | 'both';
-  allowExport: boolean;
-  chargerPowerW: number;
 }
 
 export interface EnergySystemConfig {
@@ -192,8 +200,18 @@ export interface EnergySystemConfig {
 }
 
 export interface IntervalResult {
+  /** Índice cronológico dentro del período reproducido (0 = primer intervalo). */
   index: number;
+  /** Índice del reloj civil 00:00–24:00, independiente de la hora de inicio. */
+  clockIndex: number;
   hour: number;
+  /** Cargas que el perfil considera activas/programadas durante este intervalo. */
+  activeLoads: Array<{
+    id: string;
+    name: string;
+    powerW: number;
+    kind: 'appliance' | 'cooking';
+  }>;
   pvDcW: number;
   pvAcW: number;
   pvClippedW: number;
@@ -219,9 +237,7 @@ export interface IntervalResult {
   batteryChargeGridW: number;
   batteryDischargeAcW: number;
   batteryDrawnDcW: number;
-  /** Energía exportada a la red, medida en el punto de entrega (AC). */
-  exportedW: number;
-  /** Energía DC del array desaprovechada por falta de sitio o de red. */
+  /** Energía DC del array desaprovechada: nunca se exporta a la red. */
   curtailedW: number;
   soc: number;
   /** Pérdidas de conversión AC↔DC en el intervalo. */
@@ -237,6 +253,8 @@ export interface SimulationTotals {
   pvProducedKwh: number;
   /** Energía DC del array aprovechada: carga directa + recarga. */
   pvUsedKwh: number;
+  /** Energía servida directamente a la carga por los paneles (kWh). */
+  pvToLoadKwh: number;
   /** Energía DC del array descartada por el límite de entrada del inversor. */
   pvClippedKwh: number;
   /** Importación total de red (a carga y a batería), medida en AC. */
@@ -245,11 +263,17 @@ export interface SimulationTotals {
   batteryChargeKwh: number;
   /** Energía retirada del almacén (lado batería). */
   batteryDischargeKwh: number;
-  /** Energía entregada a la red. */
-  exportedKwh: number;
-  /** Energía DC del array desaprovechada. */
+  /** Energía DC del array desaprovechada: nunca se exporta a la red. */
   curtailedKwh: number;
   unservedByPriorityKwh: Record<Priority, number>;
+  /** Comidas modeladas por el perfil del hogar. */
+  cookingMealsTotal: number;
+  /** Comidas cubiertas con carbón/gas en lugar de electricidad. */
+  cookingMealsSubstituted: number;
+  /** Comidas programadas eléctricamente que el sistema no pudo servir. */
+  cookingMealsUnmet: number;
+  /** Energía eléctrica evitada por el combustible alternativo (kWh). */
+  cookingEnergyAvoidedKwh: number;
   /** Cobertura de la demanda (energía servida / demanda). */
   coverage: number;
   /** Fracción solar: energía de origen PV (directa + almacenada) / demanda. */
@@ -266,10 +290,39 @@ export interface Diagnostic {
   message: string;
 }
 
+/**
+ * Resultado de la planificación de cocción que usó la simulación.
+ * Se guarda en el resultado para que la interfaz pueda explicar qué pasó con
+ * cada comida sin volver a calcularlo.
+ */
+export interface CookingPlacement {
+  activityId: string;
+  label: string;
+  startIndex: number;
+  intervals: number;
+  powerW: number;
+  windowStartIndex: number;
+  windowEndIndex: number;
+  /** Cubierta con carbón/gas: no hubo demanda eléctrica. */
+  coveredByFuel: boolean;
+  /** Energía eléctrica evitada por usar el combustible alternativo (kWh). */
+  avoidedDemandKwh: number;
+  /** Fracción de la energía servida eléctricamente (la completa el motor). */
+  electricalCoverage: number;
+}
+
+export interface CookingPlanSummary {
+  placements: CookingPlacement[];
+  avoidedDemandKwh: number;
+  mealsCoveredByFuel: number;
+}
+
 export interface SimulationResult {
   intervals: IntervalResult[];
   totals: SimulationTotals;
   diagnostics: Diagnostic[];
+  /** Cocción planificada durante la simulación, cuando el perfil la declara. */
+  cooking?: CookingPlanSummary;
   /** Diferencia AC entre entradas y salidas por intervalo (debe ser ~0). */
   maxBalanceErrorKwh: number;
   valid: boolean;

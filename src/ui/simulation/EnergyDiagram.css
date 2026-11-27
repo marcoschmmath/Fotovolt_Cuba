@@ -1,0 +1,141 @@
+/*
+ * Colores: cada variable lee primero un token del proyecto (--color-*) y, si no
+ * existe, usa el valor por defecto. Para integrarlo, define los tokens en tu
+ * :root o cambia los valores de aquí.
+ */
+.energy-diagram {
+  --ed-pv: var(--color-pv, #d9961a);
+  --ed-pv-ink: var(--color-pv-ink, #8a5a00);
+  --ed-grid: var(--color-grid, #3b6ea5);
+  --ed-load: var(--color-forest, #1f4d3a);
+  --ed-battery: var(--color-battery, #3f9a62);
+  --ed-low: var(--color-danger, #c2410c);
+  --ed-ink: var(--color-ink, #1d2b24);
+  --ed-surface: var(--color-surface, #fffdf7);
+  --ed-line: var(--color-line, #d9d4c5);
+
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 480px;
+  margin-inline: auto;
+}
+
+/* Nodos */
+.energy-diagram .ed-node__bg {
+  fill: var(--ed-surface);
+  stroke: var(--ed-line);
+  stroke-width: 1.5;
+}
+
+.energy-diagram .ed-node--dim {
+  opacity: 0.5;
+}
+
+.energy-diagram .ed-node__label {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 11px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--ed-ink);
+}
+
+.energy-diagram .ed-node__value {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 500;
+  text-anchor: middle;
+  fill: var(--ed-ink);
+  opacity: 0.75;
+}
+
+.energy-diagram .ed-note {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--ed-pv-ink);
+}
+.energy-diagram .ed-note--demand { fill: var(--ed-low); }
+
+/* Iconos */
+.energy-diagram .ed-icon {
+  fill: none;
+  stroke: var(--ed-ink);
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.energy-diagram .ed-battery-fill {
+  fill: var(--ed-battery);
+  stroke: none;
+}
+
+.energy-diagram .ed-battery-fill--low {
+  fill: var(--ed-low);
+}
+
+/* Vías y flujos */
+.energy-diagram .ed-track {
+  fill: none;
+  stroke: var(--ed-line);
+  stroke-width: 2;
+  stroke-dasharray: 2 6;
+  stroke-linecap: round;
+}
+
+.energy-diagram .ed-flow__line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: butt;
+  stroke-dasharray: 9 7; /* periodo 16: debe coincidir con el keyframe */
+}
+
+.energy-diagram .ed-flow--pv { color: var(--ed-pv); }
+.energy-diagram .ed-flow--grid { color: var(--ed-grid); }
+.energy-diagram .ed-flow--load { color: var(--ed-load); }
+.energy-diagram .ed-flow--battery { color: var(--ed-battery); }
+
+.energy-diagram .ed-arrow--pv { fill: var(--ed-pv); }
+.energy-diagram .ed-arrow--grid { fill: var(--ed-grid); }
+.energy-diagram .ed-arrow--load { fill: var(--ed-load); }
+.energy-diagram .ed-arrow--battery { fill: var(--ed-battery); }
+
+/* Pausado o estático: líneas continuas, la dirección la da la flecha */
+.energy-diagram .ed-flow__line[data-animated='false'] {
+  stroke-dasharray: none;
+}
+
+.energy-diagram .ed-flow__line[data-animated='true'] {
+  animation: ed-flow 0.9s linear infinite;
+}
+
+@keyframes ed-flow {
+  to {
+    stroke-dashoffset: -16;
+  }
+}
+
+/* Etiquetas de potencia */
+.energy-diagram .ed-pill rect {
+  fill: var(--ed-surface);
+  stroke: var(--ed-line);
+  stroke-width: 1;
+}
+
+.energy-diagram .ed-pill text {
+  font-family: var(--font-sans, system-ui, sans-serif);
+  font-size: 10px;
+  font-weight: 600;
+  text-anchor: middle;
+  fill: var(--ed-ink);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .energy-diagram .ed-flow__line[data-animated='true'] {
+    animation: none;
+    stroke-dasharray: none;
+  }
+}

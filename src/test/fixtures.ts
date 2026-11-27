@@ -38,7 +38,17 @@ export function battery(overrides: Partial<BatterySpec> = {}): BatterySpec {
 }
 
 export function inverter(overrides: Partial<InverterSpec> = {}): InverterSpec {
-  return { ...REFERENCE_INVERTERS[0], ...overrides };
+  const base = REFERENCE_INVERTERS[0];
+  // Copia profunda: compartir `mppt`/`acVoltages` con las plantillas del
+  // módulo hacía que un test que los mutara corrompiera el resto de la suite.
+  return {
+    ...base,
+    ...overrides,
+    mppt: overrides.mppt
+      ? overrides.mppt.map((m) => ({ ...m }))
+      : base.mppt.map((m) => ({ ...m })),
+    acVoltages: overrides.acVoltages ? [...overrides.acVoltages] : [...base.acVoltages],
+  };
 }
 
 export function params(overrides: Partial<DesignParams> = {}): DesignParams {
@@ -53,8 +63,6 @@ export function grid(overrides: Partial<GridModel> = {}, design = DEFAULT_PARAMS
       startHour: 18,
       maxPowerW: 3000,
       voltage: 'both',
-      allowExport: false,
-      chargerPowerW: 1500,
     },
     design,
   );

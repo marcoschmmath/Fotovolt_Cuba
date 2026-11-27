@@ -1,5 +1,5 @@
 import type { ButtonHTMLAttributes, CSSProperties, InputHTMLAttributes, ReactNode } from 'react';
-import { useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { Icon, type IconName } from './icons';
 
 export function fmt(value: number, digits = 1): string {
@@ -7,6 +7,11 @@ export function fmt(value: number, digits = 1): string {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
+}
+
+/** Plural natural en español: «1 equipo», «3 equipos» (sin «equipo(s)»). */
+export function plural(count: number, singular: string, pluralForm?: string): string {
+  return count === 1 ? singular : (pluralForm ?? `${singular}s`);
 }
 
 export function fmtW(watts: number): string {
@@ -108,19 +113,100 @@ export function Field({
   return (
     <div className="field">
       <label className="field__label" htmlFor={htmlFor}>{label}</label>
-      {hint && <span className="field__hint">{hint}</span>}
+      {hint && <span className="field__hint" id={htmlFor ? `${htmlFor}-hint` : undefined}>{hint}</span>}
       {children}
     </div>
   );
 }
 
+/** Mensaje emergente accesible para avisos cortos (copiar, guardar, error). */
+export function Toast({ message, tone = 'info' }: { message: string; tone?: 'info' | 'error' }) {
+  if (!message) return null;
+  return (
+    <div className={`toast toast--${tone}`} role="status" aria-live="polite">
+      <Icon name={tone === 'error' ? 'warning' : 'check'} size={16} />
+      <span>{message}</span>
+    </div>
+  );
+}
+
+/**
+ * Copia al portapapeles con feedback explícito. Antes se hacía
+ * `void navigator.clipboard?.writeText(...)`: si fallaba (permiso denegado,
+ * contexto no seguro) el usuario no se enteraba de nada.
+ */
+export function useClipboard(): { copy: (text: string) => void; message: string; error: boolean } {
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState(false);
+  const timer = useRef<number | null>(null);
+
+  const notify = useCallback((text: string, isError: boolean) => {
+    setMessage(text);
+    setError(isError);
+    if (timer.current !== null) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(() => {
+      setMessage('');
+      setError(false);
+    }, 2600);
+  }, []);
+
+  useEffect(() => () => {
+    if (timer.current !== null) window.clearTimeout(timer.current);
+  }, []);
+
+  const copy = useCallback(
+    (text: string) => {
+      if (!navigator.clipboard?.writeText) {
+        notify('No se pudo copiar: este navegador no lo permite.', true);
+        return;
+      }
+      navigator.clipboard.writeText(text).then(
+        () => notify('Copiado al portapapeles.', false),
+        () => notify('No se pudo copiar. Cópialo manualmente.', true),
+      );
+    },
+    [notify],
+  );
+
+  return { copy, message, error };
+}
+
+/**
+ * Interpreta lo que el usuario ha tecleado en un campo numérico (M2/C8).
+ *
+ * Devuelve `null` cuando el texto todavía no es un número completo (`''`,
+ * `'-'`, `'1,'`): en ese caso el valor guardado NO debe cambiar, porque
+ * convertirlo en 0 hacía que el campo saltara al mínimo mientra se escribía.
+ *
+ * Acepta la coma decimal española y sustituye coherentemente `min`/`max`
+ * (incluidos negativos, necesarios para coeficientes térmicos).
+ */
+export function parseDecimalInput(
+  raw: string,
+  min = 0,
+  max = Number.POSITIVE_INFINITY,
+): number | null {
+  const normalized = raw.trim().replace(',', '.');
+  if (normalized === '') return null;
+  const parsed = Number(normalized);
+  if (!Number.isFinite(parsed)) return null;
+  return Math.min(max, Math.max(min, parsed));
+}
+
+/**
+ * Campo numérico con búfer de texto (M2/C8):
+ *  - admite coma decimal española y punto (`1,5`, `1.5`);
+ *  - no convierte una entrada incompleta (`''`, `'-'`, `'1,'`) en 0 ni salta
+ *    al mínimo mientras se teclea;
+ *  - respeta `min`/`max` negativos (coeficientes térmicos como −0,003);
+ *  - se normaliza al salir del campo.
+ */
 export function NumberField({
   label,
   value,
   onChange,
   min = 0,
   max,
-  step = 1,
   unit,
   hint,
 }: {
@@ -129,25 +215,46 @@ export function NumberField({
   onChange: (value: number) => void;
   min?: number;
   max?: number;
+  /** Sólo documental: el campo es de texto con `inputMode="decimal"`. */
   step?: number;
   unit?: string;
   hint?: string;
 }) {
   const id = useId();
+  const [buffer, setBuffer] = useState<string | null>(null);
+
+  // Si el valor cambia desde fuera (otro control, perfil, reset), el búfer de
+  // tecleo deja de tener sentido y se descarta.
+  useEffect(() => {
+    setBuffer((current) => {
+      if (current === null) return null;
+      const parsed = Number(current.replace(',', '.'));
+      return Number.isFinite(parsed) && Math.abs(parsed - value) < 1e-9 ? current : null;
+    });
+  }, [value]);
+
+  const text = buffer ?? (Number.isFinite(value) ? String(value) : '');
+
   return (
     <Field label={label} hint={hint} htmlFor={id}>
       <div className="number-field">
         <input
           id={id}
-          type="number"
+          type="text"
           inputMode="decimal"
-          value={Number.isFinite(value) ? value : ''}
-          min={min}
-          max={max}
-          step={step}
+          autoComplete="off"
+          value={text}
+          aria-describedby={hint ? `${id}-hint` : undefined}
           onChange={(event) => {
-            const parsed = Number(event.target.value);
-            onChange(Number.isFinite(parsed) ? Math.min(max ?? Infinity, Math.max(min, parsed)) : min);
+            const raw = event.target.value;
+            setBuffer(raw);
+            const parsed = parseDecimalInput(raw, min, max);
+            if (parsed !== null) onChange(parsed);
+          }}
+          onBlur={() => {
+            const parsed = parseDecimalInput(buffer ?? '', min, max);
+            if (parsed !== null) onChange(parsed);
+            setBuffer(null);
           }}
         />
         {unit && <span className="number-field__unit">{unit}</span>}
@@ -242,11 +349,25 @@ export function Panel({ children, tone = 'paper', className = '', style }: { chi
   return <section className={`panel panel--${tone} ${className}`} style={style}>{children}</section>;
 }
 
-export function SectionTitle({ eyebrow, title, description, light }: { eyebrow?: string; title: string; description?: string; light?: boolean }) {
+export function SectionTitle({
+  eyebrow,
+  title,
+  description,
+  light,
+  level = 2,
+}: {
+  eyebrow?: string;
+  title: string;
+  description?: string;
+  light?: boolean;
+  /** Nivel de encabezado: 1 para el título principal de la pantalla. */
+  level?: 1 | 2 | 3;
+}) {
+  const Heading = level === 1 ? 'h1' : level === 3 ? 'h3' : 'h2';
   return (
     <header className={`section-title ${light ? 'section-title--light' : ''}`}>
       {eyebrow && <span className="eyebrow">{eyebrow}</span>}
-      <h2>{title}</h2>
+      <Heading>{title}</Heading>
       {description && <p>{description}</p>}
     </header>
   );
@@ -278,23 +399,51 @@ export function Badge({ children, tone = 'neutral' }: { children: ReactNode; ton
   return <span className={`badge badge--${tone}`}>{children}</span>;
 }
 
-export function Stepper({ step, labels, onStep }: { step: number; labels: string[]; onStep?: (step: number) => void }) {
+export function Stepper({
+  step,
+  labels,
+  onStep,
+  canGoTo,
+}: {
+  step: number;
+  labels: string[];
+  onStep?: (step: number) => void;
+  /** Indica si un paso es alcanzable; los no alcanzables quedan deshabilitados. */
+  canGoTo?: (step: number) => boolean;
+}) {
   return (
-    <div className="stepper" aria-label={`Paso ${step} de ${labels.length}`}>
-      {labels.map((label, index) => (
-        <button
-          type="button"
-          key={label}
-          className={`stepper__item ${index + 1 === step ? 'is-current' : ''} ${index + 1 < step ? 'is-done' : ''}`}
-          onClick={() => onStep?.(index + 1)}
-          aria-current={index + 1 === step ? 'step' : undefined}
-          aria-label={`Ir al paso ${index + 1}: ${label}`}
-          disabled={!onStep}
-        >
-          <span className="stepper__dot">{index + 1 < step ? <Icon name="check" size={12} /> : index + 1}</span>
-          <span className="stepper__label">{label}</span>
-        </button>
-      ))}
+    <div
+      className="stepper"
+      style={{ '--stepper-steps': labels.length } as CSSProperties}
+      aria-label={`Paso ${step} de ${labels.length}`}
+    >
+      {labels.map((label, index) => {
+        const target = index + 1;
+        const reachable = canGoTo ? canGoTo(target) : true;
+        return (
+          <button
+            type="button"
+            key={label}
+            className={`stepper__item ${target === step ? 'is-current' : ''} ${target < step ? 'is-done' : ''}`}
+            onClick={() => {
+              if (!onStep || !reachable) return;
+              onStep(target);
+            }}
+            aria-current={target === step ? 'step' : undefined}
+            aria-label={
+              reachable
+                ? `Ir al paso ${target}: ${label}`
+                : `Paso ${target} (${label}): completa los pasos anteriores para desbloquearlo`
+            }
+            aria-disabled={!reachable}
+            disabled={!onStep || !reachable}
+            title={reachable ? undefined : 'Completa los pasos anteriores'}
+          >
+            <span className="stepper__dot">{target < step ? <Icon name="check" size={12} /> : target}</span>
+            <span className="stepper__label">{label}</span>
+          </button>
+        );
+      })}
     </div>
   );
 }
@@ -316,7 +465,26 @@ export function SwipePages<T>({
     const clamped = Math.max(0, Math.min(items.length - 1, next));
     setIndex(clamped);
     const page = track.current?.children[clamped] as HTMLElement | undefined;
-    page?.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    if (!page) return;
+    const reduce = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+    page.scrollIntoView({ behavior: reduce ? 'auto' : 'smooth', inline: 'center', block: 'nearest' });
+  }
+
+  /** Página visible según la posición real de cada hijo (no según el viewport). */
+  function visiblePage(element: HTMLDivElement): number {
+    const pages = Array.from(element.children) as HTMLElement[];
+    if (!pages.length) return 0;
+    const center = element.scrollLeft + element.clientWidth / 2;
+    let best = 0;
+    let bestDistance = Number.POSITIVE_INFINITY;
+    pages.forEach((page, position) => {
+      const distance = Math.abs(page.offsetLeft + page.offsetWidth / 2 - center);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        best = position;
+      }
+    });
+    return best;
   }
 
   return (
@@ -326,8 +494,7 @@ export function SwipePages<T>({
         ref={track}
         aria-label={label}
         onScroll={(event) => {
-          const element = event.currentTarget;
-          const next = Math.round(element.scrollLeft / Math.max(1, element.clientWidth));
+          const next = visiblePage(event.currentTarget);
           if (next !== index) setIndex(next);
         }}
       >
