@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEFAULT_PARAMS } from '../core/defaults';
 import { createInitialState, isSupportedStep, loadState, saveState } from './storage';
+import type { AppState } from './storage';
 
 /**
  * Persistencia de la nueva arquitectura: hogares, instalaciones y fotos de
@@ -321,6 +322,49 @@ describe('persistencia (esquema v4: hogares e instalaciones sin configuración c
     expect('allowExport' in (state.installations[0].params as object)).toBe(false);
     expect(state.households[0].cooking).toBeTruthy();
   });
+  it('conserva la categoría de cargas en una instalación recomendada', () => {
+    const state = createInitialState();
+    state.households = [{
+      id: 'home-recommended',
+      name: 'Casa recomendada',
+      appliances: [appliance('critical')],
+      cooking: {
+        enabled: false,
+        fuelKind: null,
+        fuelConfirmed: false,
+        substitution: 'electric-first',
+        allowFlexibleTiming: true,
+      },
+      activities: [],
+      night: { essentialIds: [] },
+      voltage: 220,
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    } as AppState['households'][number]];
+    state.activeHouseholdId = 'home-recommended';
+    state.installations = [{
+      id: 'installation-recommended',
+      householdProfileId: 'home-recommended',
+      name: 'Moderada',
+      panelId: state.panels[0].id,
+      panelCount: 4,
+      batteryId: state.batteries[0].id,
+      batteryCount: 1,
+      inverterId: state.inverters[0].id,
+      installationType: 'hybrid',
+      params: { ...DEFAULT_PARAMS },
+      recommendationTier: 'moderate',
+      origin: 'user',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    }];
+    saveState(state);
+
+    const restored = loadState();
+
+    expect(restored.installations[0].recommendationTier).toBe('moderate');
+  });
+
 });
 
 function state0() {
