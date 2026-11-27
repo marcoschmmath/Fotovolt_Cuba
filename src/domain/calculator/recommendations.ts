@@ -214,7 +214,7 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
     const lastBatteryCount = Math.min(MAX_BATTERY_COUNT, firstBatteryCount + EXTRA_BATTERY_MODULES_TO_TRY);
     const targetPvW = requiredPvWatts(sizingEnergy, params, battery);
 
-    for (const inverter of inverters) {
+    inverterLoop: for (const inverter of inverters) {
       // Potencia y arranque del inversor no se solucionan añadiendo batería o placas.
       if (inverter.ratedW < requiredContinuousW * 1.1 || inverter.surgeW > 0 && inverter.surgeW < requiredPeakW) continue;
       if (battery.nominalV > 0 && inverter.batteryVoltageV > 0) {
@@ -248,12 +248,14 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
             const errorCodes = technical.diagnostics
               .filter((diagnostic) => diagnostic.level === 'error')
               .map((diagnostic) => diagnostic.code);
-            if (errorCodes.some((code) => !['MPPT'].includes(code))) {
-              // Si la incompatibilidad es por descarga del BMS, más módulos
-              // podrían resolverla; las demás requieren otro equipo.
-              if (errorCodes.length === 1 && errorCodes[0] === 'BATT_DISCHARGE_W') break;
-              break;
-            }
+            const hardError = errorCodes.some((code) => !['MPPT', 'BATT_DISCHARGE_W'].includes(code));
+            if (hardError) continue inverterLoop;
+            // El límite de descarga del BMS sí puede corregirse añadiendo
+            // módulos en paralelo. Se prueba el siguiente tamaño de banco.
+            if (errorCodes.includes('BATT_DISCHARGE_W')) break;
+            // Una configuración de strings puede depender del número entero
+            // de paneles; se prueba el siguiente tamaño del campo PV.
+            if (errorCodes.includes('MPPT')) continue;
 
             const arrayCheck = checkBalancedArrayConfiguration(panel, inverter, panelCount, params);
             if (arrayCheck.status === 'incompatible') continue;
