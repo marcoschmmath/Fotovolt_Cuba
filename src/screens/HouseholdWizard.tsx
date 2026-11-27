@@ -52,7 +52,7 @@ export function HouseholdWizard({
   const nightKwh = useMemo(() => nightEssentialKwh(draft, params), [draft, params]);
   const isEditing = Boolean(existing);
 
-  function save() {
+  function save(openRecommendations = false) {
     const now = new Date().toISOString();
     const record: HouseholdProfile = {
       ...draft,
@@ -69,7 +69,10 @@ export function HouseholdWizard({
       };
     });
     setSaved(isEditing ? 'Vivienda actualizada.' : 'Vivienda guardada. Ya puedes añadir un sistema solar.');
-    window.setTimeout(() => navigate('/'), 850);
+    window.setTimeout(
+      () => navigate(openRecommendations ? `/recomendaciones?hogar=${record.id}` : '/'),
+      850,
+    );
   }
 
   return (
@@ -179,7 +182,10 @@ export function HouseholdWizard({
 
           <div className="wizard-actions">
             <Button variant="quiet" onClick={() => setStep(2)}>Atrás</Button>
-            <Button icon="check" onClick={save} disabled={draft.appliances.length === 0}>Guardar vivienda</Button>
+            <Button variant="outline" icon="sun" onClick={() => save(true)} disabled={draft.appliances.length === 0}>
+              Guardar y generar recomendaciones
+            </Button>
+            <Button icon="check" onClick={() => save(false)} disabled={draft.appliances.length === 0}>Guardar vivienda</Button>
           </div>
         </div>
       )}
