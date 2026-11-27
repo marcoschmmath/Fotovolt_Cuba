@@ -90,10 +90,7 @@ export interface RecommendationInput {
 interface CandidateSearchInput extends RecommendationInput {
   tier: RecommendationTier;
   scenarioHousehold: HouseholdProfile;
-  energy: EnergyBreakdown;
   sizingEnergy: EnergyBreakdown;
-  cookingKwh: number;
-  cookingNightKwh: number;
 }
 
 const FULL_SOC_TOLERANCE = 0.999;
@@ -366,10 +363,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
       ...input,
       tier,
       scenarioHousehold,
-      energy,
       sizingEnergy: sizing.energy,
-      cookingKwh: sizing.cookingKwh,
-      cookingNightKwh: sizing.cookingNightKwh,
     })[0] ?? null;
 
     let reason: string | null = null;
