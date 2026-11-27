@@ -42,8 +42,9 @@ export function resolveInstallation(state: AppState, installationId?: string): A
       : (state.households.find((h) => h.id === state.activeHouseholdId) ?? null);
   // Una recomendación evalúa exactamente el subconjunto de cargas para el que
   // fue dimensionada. El perfil guardado del usuario permanece intacto.
-  const household = storedHousehold && system?.recommendationTier
-    ? householdForRecommendation(storedHousehold, system.recommendationTier)
+  const recommendationTier = system?.recommendationTier;
+  const household = storedHousehold && recommendationTier
+    ? householdForRecommendation(storedHousehold, recommendationTier)
     : storedHousehold;
   const panel = system ? (state.panels.find((p) => p.id === system.panelId) ?? null) : null;
   const battery = system ? (state.batteries.find((b) => b.id === system.batteryId) ?? null) : null;
@@ -69,7 +70,7 @@ export function useEvaluation(state: AppState, installationId?: string): {
   evaluation: SystemEvaluation | null;
   active: ActiveInstallation;
 } {
-  const active = resolveInstallation(state, installationId);
+  const active = useMemo(() => resolveInstallation(state, installationId), [state, installationId]);
   const evaluation = useMemo(() => {
     if (!active.household || !active.system || !active.panel || !active.battery || !active.inverter) return null;
     if (active.needsDesign) return null;
