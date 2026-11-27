@@ -222,10 +222,6 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
       for (const panel of panels) {
         const desiredPanelCount = Math.max(1, Math.ceil(targetPvW / panel.powerW));
         const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(inverter.maxPvInputW / panel.powerW));
-        if (maxPanels < desiredPanelCount) {
-          // Se permite probar la capacidad PV máxima; la simulación decidirá
-          // si ese límite todavía alcanza para restaurar la batería.
-        }
         if (maxPanels < 1) continue;
 
         let foundForPanel = false;
@@ -336,7 +332,7 @@ function findTierRecommendations(input: CandidateSearchInput): SolarRecommendati
               simulatedPvKwh: simulation.totals.pvProducedKwh,
               rechargeSoc,
               unservedKwh: simulation.totals.unservedKwh,
-              technicalStatus: technical.status,
+              technicalStatus: technical.status === 'verified' ? 'verified' : 'partial',
               warnings,
               ...price,
             });
@@ -374,7 +370,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
           ? 'No hay equipos con prioridad crítica o importante. Ajusta las prioridades de tu vivienda para generar esta opción.'
           : 'Esta vivienda todavía no tiene consumos suficientes para dimensionar una instalación.';
     } else if (!recommendation) {
-      reason = 'No se encontró una combinación del catálogo que cubra las cargas y recupere al menos el 99,9 % de la carga inicial en 24 horas, sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
+      reason = 'No se encontró una combinación del catálogo que cubra las cargas y recargue la batería desde su SOC mínimo hasta al menos el 99,9 % antes del ocaso, sin utilizar la red. Revisa las fichas técnicas o amplía el catálogo.';
     }
     return { tier, recommendation, reason };
   });
