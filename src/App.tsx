@@ -9,6 +9,7 @@ import { Catalog } from './screens/Catalog';
 import { Contact } from './screens/Contact';
 import { OfferCheck } from './screens/OfferCheck';
 import { More } from './screens/More';
+import { Recommendations } from './screens/Recommendations';
 
 const NAV: Array<{ path: string; label: string; icon: IconName; activePaths: string[] }> = [
   { path: '/', label: 'Inicio', icon: 'home', activePaths: ['/'] },
@@ -72,6 +73,7 @@ function headerTitle(path: string): string {
   const titles: Record<string, string> = {
     '/hogar': 'Mi vivienda',
     '/instalacion': 'Sistema fotovoltaico',
+    '/recomendaciones': 'Recomendaciones solares',
     '/simulacion': 'Simulación',
     '/resultado': 'Resultados',
     '/oferta': 'Comprobar una oferta',
@@ -125,6 +127,7 @@ export default function App() {
         {route.path === '/' && <Home navigate={navigate} />}
         {route.path === '/hogar' && <HouseholdWizard navigate={navigate} householdId={route.id ?? undefined} initialStep={route.paso} />}
         {route.path === '/instalacion' && <SystemWizard navigate={navigate} installationId={route.id ?? undefined} initialHouseholdId={route.hogar ?? undefined} />}
+        {route.path === '/recomendaciones' && <Recommendations navigate={navigate} householdId={route.hogar ?? undefined} />}
         {route.path === '/simulacion' && <Simulation navigate={navigate} installationId={route.id ?? undefined} />}
         {route.path === '/resultado' && <Result navigate={navigate} installationId={route.id ?? undefined} />}
         {route.path === '/oferta' && <OfferCheck navigate={navigate} />}
