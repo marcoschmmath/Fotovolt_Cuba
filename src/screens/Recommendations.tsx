@@ -61,7 +61,7 @@ function RecommendationOption({
           </ul>
         </Note>
       )}
-      <Button block icon="check" onClick={onSelect}>Usar esta instalación</Button>
+      <Button full icon="check" onClick={onSelect}>Usar esta instalación</Button>
     </Panel>
   );
 }
