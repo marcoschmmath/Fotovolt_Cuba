@@ -4,6 +4,7 @@ import type { HouseholdProfile } from '../domain/household/types';
 import type { SystemConfiguration } from '../domain/system/types';
 import type { BatterySpec, InverterSpec, PanelSpec } from '../domain/core/types';
 import { evaluateSystem, type EvaluationInput, type SystemEvaluation } from '../domain/simulator/scenarioGrid';
+import { householdForRecommendation } from '../domain/household/recommendationProfile';
 
 export interface Resolved<T extends { id: string }> {
   item: T;
@@ -34,11 +35,16 @@ export function resolveInstallation(state: AppState, installationId?: string): A
     : state.installations.find((i) => i.id === state.activeInstallationId) ??
       state.installations.find((i) => i.householdProfileId === state.activeHouseholdId) ??
       null;
-  const household = system
+  const storedHousehold = system
     ? (state.households.find((h) => h.id === system.householdProfileId) ?? null)
     : requestedInstallationMissing
       ? null
       : (state.households.find((h) => h.id === state.activeHouseholdId) ?? null);
+  // Una recomendación evalúa exactamente el subconjunto de cargas para el que
+  // fue dimensionada. El perfil guardado del usuario permanece intacto.
+  const household = storedHousehold && system?.recommendationTier
+    ? householdForRecommendation(storedHousehold, system.recommendationTier)
+    : storedHousehold;
   const panel = system ? (state.panels.find((p) => p.id === system.panelId) ?? null) : null;
   const battery = system ? (state.batteries.find((b) => b.id === system.batteryId) ?? null) : null;
   const inverter = system ? (state.inverters.find((i) => i.id === system.inverterId) ?? null) : null;
@@ -107,7 +113,10 @@ export function useHouseholdComparison(
     return state.installations
       .filter((system) => system.householdProfileId === householdId && system.panelCount + system.batteryCount > 0)
       .map((system) => {
-        const household = state.households.find((h) => h.id === system.householdProfileId);
+        const storedHousehold = state.households.find((h) => h.id === system.householdProfileId);
+        const household = storedHousehold && system.recommendationTier
+          ? householdForRecommendation(storedHousehold, system.recommendationTier)
+          : storedHousehold;
         const panel = state.panels.find((p) => p.id === system.panelId);
         const battery = state.batteries.find((b) => b.id === system.batteryId);
         const inverter = state.inverters.find((i) => i.id === system.inverterId);
