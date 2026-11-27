@@ -63,7 +63,7 @@ describe('generateSolarRecommendations', () => {
       expect(recommendation.inverter.id).toBe('ref-inv-5000');
       expect(recommendation.panelCount).toBeGreaterThan(0);
       expect(recommendation.batteryCount).toBeGreaterThan(0);
-      expect(recommendation.finalSoc).toBeGreaterThanOrEqual(0.999);
+      expect(recommendation.rechargeSoc).toBeGreaterThanOrEqual(0.999);
       expect(recommendation.unservedKwh).toBeLessThanOrEqual(1e-6);
     }
     expect(source.appliances).toHaveLength(3);
