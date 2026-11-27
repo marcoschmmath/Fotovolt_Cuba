@@ -146,7 +146,7 @@ export function Recommendations({
       <SectionTitle
         eyebrow={household.name}
         title="Tres formas de alimentar tu vivienda"
-        description="Las propuestas usan los equipos de tu catálogo y se comprueban con una simulación de 24 horas sin red eléctrica."
+        description="Las propuestas usan los equipos de tu catálogo y se validan con los mismos escenarios de 24 horas y criterios energéticos que la pantalla de Resultados."
       />
       <Note level="info" title="Qué significa que una propuesta sea viable">
         Se reutiliza exactamente la evaluación energética existente: comienza a las 08:00 con SOC inicial igual al mayor entre el 30 % y el SOC mínimo físico de la batería, y termina a las 08:00 del día siguiente. Se comprueban los 24 escenarios de retorno de red. La compatibilidad energética exige cobertura mínima del 99,9 %, SOC final sostenible respecto al inicial y ninguna comida eléctrica sin atender, igual que en Resultados. El apagón total se evalúa y muestra por separado.
