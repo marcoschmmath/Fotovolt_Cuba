@@ -80,10 +80,13 @@ export function Recommendations({
   const { state, patch } = useApp();
   const household = state.households.find((item) => item.id === (householdId ?? state.activeHouseholdId)) ??
     state.households.find((item) => item.id === householdId) ?? null;
-  const params = useMemo(
-    () => state.installations.find((item) => item.householdProfileId === household?.id)?.params ?? systemParams(),
-    [state.installations, household?.id],
-  );
+  const params = useMemo(() => {
+    const active = state.installations.find((item) =>
+      item.id === state.activeInstallationId && item.householdProfileId === household?.id,
+    );
+    const saved = active ?? state.installations.find((item) => item.householdProfileId === household?.id);
+    return saved?.params ?? systemParams();
+  }, [state.installations, state.activeInstallationId, household?.id]);
 
   const cards = useMemo(() => {
     if (!household) return [];
@@ -141,6 +144,7 @@ export function Recommendations({
       />
       <Note level="info" title="Qué significa que una propuesta sea viable">
         La prueba parte del SOC mínimo permitido al amanecer, simula un ciclo completo de 24 horas sin red y exige que la batería alcance al menos el 99,9 % antes del ocaso, sin dejar cargas sin suministro. Usa las HSP, pérdidas, temperatura y sombras configuradas; no garantiza ese resultado durante días nublados.
+        <p className="field__hint">Hipótesis utilizadas: {params.hsp.toFixed(1)} HSP, eficiencia global {Math.round(params.systemEfficiency * 100)} %, sombra/suciedad {Math.round(params.shading * 100)} % y temperatura ambiente {params.ambientC} °C.</p>
       </Note>
       {cards.map((card) => (
         <section className="stack" key={card.tier.id} aria-label={'Opción ' + card.tier.label}>
