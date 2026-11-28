@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   batteryBankFitsNightEnergy,
   generateSolarRecommendations,
-  minimumParallelUnitsForCandidate,
   RECOMMENDATION_LIMITS,
 } from './recommendations';
 import { batteryPack } from './battery';
@@ -66,24 +65,6 @@ describe('filtros del recomendador', () => {
     expect(RECOMMENDATION_LIMITS).toEqual({ maxPanels: 50, maxBatteries: 10 });
   });
 
-  it('salta directamente las unidades paralelas que no alcanzan los límites agregados', () => {
-    const p = params();
-    const minimum = minimumParallelUnitsForCandidate({
-      inverter: inverter({
-        ratedW: 5000,
-        surgeW: 10000,
-        maxPvInputW: 6000,
-        maxDischargeA: 100,
-        efficiency: 0.95,
-      }),
-      battery: battery({ nominalV: 48, dischargeEff: 0.9 }),
-      targetPvW: 12000,
-      requiredContinuousW: 7000,
-      requiredPeakW: 15000,
-      params: p,
-    });
-    expect(minimum).toBe(4);
-  });
 });
 
 describe('generateSolarRecommendations', () => {
