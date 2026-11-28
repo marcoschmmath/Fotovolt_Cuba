@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { batteryBankFitsNightEnergy, generateSolarRecommendations, RECOMMENDATION_LIMITS } from './recommendations';
+import {
+  batteryBankFitsNightEnergy,
+  generateSolarRecommendations,
+  minimumParallelUnitsForCandidate,
+  RECOMMENDATION_LIMITS,
+} from './recommendations';
 import { batteryPack } from './battery';
 import type { HouseholdProfile } from '../household/types';
 import { DEFAULT_COOKING, defaultCookingActivities } from '../household/types';
@@ -57,17 +62,41 @@ describe('filtros del recomendador', () => {
   it('limita las sugerencias a 10 baterías y 50 paneles', () => {
     expect(RECOMMENDATION_LIMITS).toEqual({ maxPanels: 50, maxBatteries: 10 });
   });
+
+  it('salta directamente las unidades paralelas que no alcanzan los límites agregados', () => {
+    const p = params();
+    const minimum = minimumParallelUnitsForCandidate({
+      inverter: inverter({
+        ratedW: 5000,
+        surgeW: 10000,
+        maxPvInputW: 6000,
+        maxDischargeA: 100,
+        efficiency: 0.95,
+      }),
+      battery: battery({ nominalV: 48, dischargeEff: 0.9 }),
+      targetPvW: 12000,
+      requiredContinuousW: 7000,
+      requiredPeakW: 15000,
+      params: p,
+    });
+    expect(minimum).toBe(4);
+  });
 });
 
 describe('generateSolarRecommendations', () => {
   it('genera tres niveles aplicando el criterio de compatibilidad existente (08:00, SOC inicial 30 %)', () => {
     const source = household();
+    const completedTiers: string[] = [];
+    const progressPhases: string[] = [];
     const result = generateSolarRecommendations({
       household: source,
       panels: [panel()],
       batteries: [battery({ nominalKwh: 1.4 })],
       inverters: [inverter()],
       params: params(),
+    }, {
+      onProgress: (progress) => progressPhases.push(progress.phase),
+      onTierComplete: (card) => completedTiers.push(card.tier.id),
     });
 
     expect(result.map((card) => card.tier.id)).toEqual(['essential', 'moderate', 'roomy']);
@@ -89,6 +118,10 @@ describe('generateSolarRecommendations', () => {
       expect(recommendation.blackoutCoverage).toBeGreaterThanOrEqual(0);
       expect(recommendation.blackoutCoverage).toBeLessThanOrEqual(1);
     }
+    expect(completedTiers).toEqual(['essential', 'moderate', 'roomy']);
+    expect(progressPhases).toContain('generating');
+    expect(progressPhases).toContain('validating');
+    expect(progressPhases).toContain('complete');
     expect(source.appliances).toHaveLength(3);
   });
 });
