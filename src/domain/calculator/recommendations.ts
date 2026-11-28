@@ -108,6 +108,7 @@ export interface RecommendationProgress {
   candidateGenerationMs?: number;
   validationMs?: number;
   elapsedMs?: number;
+  lastEnergyRejection?: string;
 }
 
 export interface RecommendationGenerationOptions {
@@ -269,6 +270,7 @@ function findTierRecommendation(
   let technicalRejections = 0;
   let candidatesValidated = 0;
   let scenariosEvaluated = 0;
+  let lastEnergyRejection: string | undefined;
 
   const requiredContinuousW = energy.peakSimultaneousW * tier.inverterMargin;
   const requiredPeakW = peakDesignW(energy);
@@ -489,6 +491,22 @@ function findTierRecommendation(
         candidateGenerationMs,
         validationMs: Date.now() - validationStartedAt,
         elapsedMs: Date.now() - tierStartedAt,
+        lastEnergyRejection,
+      });
+    }, (scenario, reasons) => {
+      lastEnergyRejection = `${scenario.label}: ${reasons.join('; ')}`;
+      options.onProgress?.({
+        tierId: tier.id,
+        phase: 'validating',
+        candidatesGenerated: candidates.length,
+        candidatesValidated,
+        scenariosEvaluated,
+        technicalChecks,
+        technicalRejections,
+        candidateGenerationMs,
+        validationMs: Date.now() - validationStartedAt,
+        elapsedMs: Date.now() - tierStartedAt,
+        lastEnergyRejection,
       });
     });
     if (!usual) continue;
