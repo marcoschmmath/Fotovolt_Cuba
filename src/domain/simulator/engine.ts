@@ -11,6 +11,7 @@ import {
   buildDailyDemand,
   emptyPriorityRecord,
   intervalCount,
+  isWithinWindow,
   PRIORITIES,
   stepHours,
 } from '../calculator/energy';
@@ -39,6 +40,30 @@ export interface SimulationOptions {
    * noche baja al suelo mínimo permitido. Sin él se usa el suelo del banco.
    */
   socFloorByInterval?: number[];
+  /** Curvas invariantes compartidas por todas las simulaciones del mismo candidato. */
+  prepared?: PreparedSimulationData;
+  /** false evita construir y almacenar IntervalResult cuando sólo se validan métricas. */
+  collectIntervals?: boolean;
+}
+
+/** Datos comunes a todos los escenarios de disponibilidad de red de un candidato. */
+export interface PreparedSimulationData {
+  dailyDemand: ReturnType<typeof buildDailyDemand>;
+  pvDcPowerByClockIndex: number[];
+}
+
+/** Calcula una sola vez las curvas de demanda y producción PV. */
+export function prepareSimulation(config: EnergySystemConfig): PreparedSimulationData {
+  const count = intervalCount(config.params);
+  const dtHours = stepHours(config.params);
+  const installedW = Math.max(0, config.panelCount) * Math.max(0, config.panel.powerW);
+  return {
+    dailyDemand: buildDailyDemand(config.appliances, config.params),
+    pvDcPowerByClockIndex: Array.from(
+      { length: count },
+      (_, index) => pvDcPowerAt((index + 0.5) * dtHours, installedW, config.solar),
+    ),
+  };
 }
 
 /**
@@ -87,15 +112,9 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   const dtHours = stepHours(params);
   const kwhPerWatt = dtHours / 1000;
 
-  const dailyDemand = config.appliances.length
-    ? buildDailyDemand(config.appliances, config.params)
-    : Array.from({ length: count }, (_, index) => ({
-        index,
-        hour: (index + 0.5) * dtHours,
-        byPriority: emptyPriorityRecord(),
-        totalW: 0,
-        activeLoads: [] as Array<{ id: string; name: string; powerW: number }>,
-      }));
+  const prepared = options.prepared ?? prepareSimulation(config);
+  const dailyDemand = prepared.dailyDemand;
+  const pvDcPowerByClockIndex = prepared.pvDcPowerByClockIndex;
   const baseDemand = dailyDemand.map((d) => ({ ...d.byPriority }));
 
   const pack = batteryPack(battery, config.batteryCount, params);
@@ -125,8 +144,6 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   // capacidad de carga en red.
   const gridChargerW = Math.max(0, inverter.gridChargerW ?? 0);
   const maxGridChargeKwh = Math.min(gridChargerW, Math.max(0, grid.maxPowerW)) * kwhPerWatt;
-  const installedW = Math.max(0, config.panelCount) * Math.max(0, panel.powerW);
-
   const demand = baseDemand;
   const floorSoc = options.socFloorByInterval
     ? options.socFloorByInterval.map((soc) => Math.min(1, Math.max(pack.minSoc, soc)))
@@ -138,9 +155,14 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   const startClockIndex = ((Math.round((requestedStartHour * 60) / params.stepMinutes) % count) + count) % count;
   const startSoc = Math.min(1, Math.max(pack.minSoc, options.startSoc ?? 1));
   let storedKwh = nominalKwh * startSoc;
+  const collectIntervals = options.collectIntervals !== false;
   const intervals: IntervalResult[] = [];
+  const unservedWByClockIndex = new Float64Array(count);
   const diagnostics: Diagnostic[] = [];
   let maxBalanceErrorKwh = 0;
+  let nightDeficitKwh = 0;
+  let finalSoc = startSoc;
+  let minSoc = startSoc;
   let firstCriticalFailure: number | null = null;
   let hitMinSoc = false;
   let hitFullSoc = false;
@@ -177,11 +199,8 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   const cooking: CookingPlanSummary | undefined = options.cooking
     ? (() => {
         const baseDemandW = baseDemand.map((d) => PRIORITIES.reduce((sum, p) => sum + d[p], 0));
-        const pvAvailableAcW = Array.from({ length: count }, (_, i) =>
-          Math.min(
-            pvDcPowerAt((i + 0.5) * dtHours, installedW, solar) * etaInverter,
-            Math.max(0, inverter.ratedW),
-          ),
+        const pvAvailableAcW = pvDcPowerByClockIndex.map((pvW) =>
+          Math.min(pvW * etaInverter, Math.max(0, inverter.ratedW)),
         );
         const plan = planCooking({
           activities: options.cooking!.activities,
@@ -242,7 +261,7 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
     // baja al mínimo del banco (DoD/manufacturero).
     const mandatoryCookingNow = options.cooking?.hasFuel === false && cookingByClockIndex[clockIndex].length > 0;
     const floorKwh = (mandatoryCookingNow ? pack.minSoc : floorSoc[clockIndex]) * nominalKwh;
-    const activeLoads = [
+    const activeLoads = collectIntervals ? [
       ...dailyDemand[clockIndex].activeLoads.map((load) => ({ ...load, kind: 'appliance' as const })),
       ...cookingByClockIndex[clockIndex].map((meal) => ({
         id: `meal-${meal.activityId}`,
@@ -250,10 +269,10 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
         powerW: meal.powerW,
         kind: 'cooking' as const,
       })),
-    ];
+    ] : [];
 
     // ── Producción fotovoltaica en el bus DC ──
-    const pvDcRawKwh = pvDcPowerAt(hour, installedW, solar) * kwhPerWatt;
+    const pvDcRawKwh = pvDcPowerByClockIndex[clockIndex] * kwhPerWatt;
     const pvDcAvailableKwh = Math.min(pvDcRawKwh, maxPvInputKwh);
     const clippedDcKwh = Math.max(0, pvDcRawKwh - pvDcAvailableKwh);
 
@@ -376,9 +395,15 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
     if (storedKwh <= floorKwh + 1e-9) hitMinSoc = true;
     if (storedKwh >= nominalKwh - 1e-9) hitFullSoc = true;
     const soc = storedKwh / nominalKwh;
+    finalSoc = soc;
+    minSoc = Math.min(minSoc, soc);
 
     const servedKwh = PRIORITIES.reduce((sum, p) => sum + servedByPriorityKwh[p], 0);
     const unservedKwh = PRIORITIES.reduce((sum, p) => sum + unservedByPriorityKwh[p], 0);
+    if (i < count) unservedWByClockIndex[clockIndex] = unservedKwh / kwhPerWatt;
+    if (params.nightStart !== params.nightEnd && isWithinWindow(hour, params.nightStart, params.nightEnd)) {
+      nightDeficitKwh += unservedByPriorityKwh.critical;
+    }
 
     // ── Balance independiente ──
     // Se comparan magnitudes conocidas por separado, no la misma expresión
@@ -422,7 +447,7 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
     for (const p of PRIORITIES) totals.unservedByPriorityKwh[p] += unservedByPriorityKwh[p];
     totals.maxDemandW = Math.max(totals.maxDemandW, demandTotalW);
 
-    intervals.push({
+    if (collectIntervals) intervals.push({
       index: i,
       clockIndex,
       hour,
@@ -464,8 +489,7 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
       let unservedKwh = 0;
       for (let k = 0; k < placement.intervals; k += 1) {
         const clockIndex = (placement.startIndex + k) % count;
-        const interval = intervals.find((item) => item.clockIndex === clockIndex);
-        if (interval) unservedKwh += interval.unservedW * kwhPerWatt;
+        unservedKwh += unservedWByClockIndex[clockIndex] * kwhPerWatt;
       }
       if (unservedKwh >= energyKwh * 0.5) cookingUnmetMeals.push(placement.label);
     }
@@ -480,9 +504,9 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   // demanda. La energía PV que sólo recarga la batería no cuenta como servida:
   // con la política híbrida esa batería puede no llegar a usarse nunca.
   totals.solarFraction = totals.demandKwh > 0 ? totals.pvToLoadKwh / totals.demandKwh : 0;
-  totals.finalSoc = socOfLast(intervals, 1);
-  totals.minSoc = intervals.reduce((min, x) => Math.min(min, x.soc), 1);
-  totals.peakSurgeW = peakDesignWFromConfig(config);
+  totals.finalSoc = finalSoc;
+  totals.minSoc = minSoc;
+  totals.peakSurgeW = peakDesignWFromConfig(config, dailyDemand);
 
   if (totals.unservedByPriorityKwh.critical > UNSERVED_EPSILON_KWH) {
     diagnostics.push({
@@ -532,6 +556,7 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
     totals,
     diagnostics,
     cooking,
+    summary: { nightDeficitKwh },
     maxBalanceErrorKwh,
     valid: maxBalanceErrorKwh < 1e-6 * Math.max(1, days),
   };
@@ -541,10 +566,6 @@ function eff(value: number): number {
   return Number.isFinite(value) && value > 0 && value <= 1 ? value : 0;
 }
 
-function socOfLast(intervals: IntervalResult[], fallback: number): number {
-  return intervals.length ? intervals[intervals.length - 1].soc : fallback;
-}
-
 function formatHour(hour: number): string {
   const totalMinutes = Math.round(hour * 60);
   const h = Math.floor(totalMinutes / 60) % 24;
@@ -552,8 +573,11 @@ function formatHour(hour: number): string {
   return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}`;
 }
 
-function peakDesignWFromConfig(config: EnergySystemConfig): number {
-  return peakDesignW(analyzeEnergy(config.appliances, config.params));
+function peakDesignWFromConfig(
+  config: EnergySystemConfig,
+  demand: ReturnType<typeof buildDailyDemand>,
+): number {
+  return peakDesignW(analyzeEnergy(config.appliances, config.params, demand));
 }
 
 export function unservedEvents(
