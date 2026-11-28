@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from './ui/icons';
+import { useApp } from './app/AppContext';
 import { Home } from './screens/Home';
 import { HouseholdWizard } from './screens/HouseholdWizard';
 import { SystemWizard } from './screens/SystemWizard';
@@ -12,7 +13,7 @@ import { More } from './screens/More';
 
 const NAV: Array<{ path: string; label: string; icon: IconName; activePaths: string[] }> = [
   { path: '/', label: 'Inicio', icon: 'home', activePaths: ['/'] },
-  { path: '/hogar', label: 'Simular', icon: 'calculator', activePaths: ['/hogar', '/instalacion', '/simulacion'] },
+  { path: '/hogar', label: 'Diseñar', icon: 'calculator', activePaths: ['/hogar', '/instalacion', '/simulacion'] },
   { path: '/resultado', label: 'Resultados', icon: 'grid', activePaths: ['/resultado', '/oferta'] },
   { path: '/mas', label: 'Más', icon: 'layers', activePaths: ['/mas', '/catalogo', '/contacto'] },
 ];
@@ -91,6 +92,7 @@ function backTarget(path: string, id: string | null): string {
 }
 
 export default function App() {
+  const { state } = useApp();
   const { route, navigate } = useHashRoute();
   const isHome = route.path === '/';
 
@@ -142,7 +144,14 @@ export default function App() {
               key={item.path}
               className={`bottom-nav__item ${active ? 'is-active' : ''}`}
               aria-current={active ? 'page' : undefined}
-              onClick={() => navigate(item.path)}
+              onClick={() => {
+                if (item.path === '/hogar') {
+                  const household = state.households.find((h) => h.id === state.activeHouseholdId) ?? state.households[0];
+                  navigate(household ? `/hogar?id=${household.id}` : '/hogar');
+                  return;
+                }
+                navigate(item.path);
+              }}
             >
               <Icon name={item.icon} size={19} />
               <span>{item.label}</span>
