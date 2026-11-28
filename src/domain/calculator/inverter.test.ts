@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { checkInverterCompatibility, selectInverter } from './inverter';
+import { checkInverterCompatibility, inverterWithParallelUnits, selectInverter } from './inverter';
 import { battery, inverter, panel, params } from '../../test/fixtures';
 
 const base = {
@@ -107,6 +107,28 @@ describe('compatibilidad del inversor', () => {
 
     expect(one.diagnostics.some((item) => item.code === 'BATT_DISCHARGE_W')).toBe(true);
     expect(two.diagnostics.some((item) => item.code === 'BATT_DISCHARGE_W')).toBe(false);
+  });
+
+  it('escala las capacidades eléctricas y replica MPPT para inversores en paralelo', () => {
+    const single = inverter({
+      ratedW: 5000, surgeW: 10000, maxPvInputW: 6000,
+      maxChargeA: 100, maxDischargeA: 100,
+      maxParallelUnits: 6,
+      mppt: [{ maxVoltageV: 450, minVoltageV: 100, maxCurrentA: 20, maxPowerW: 6000 }],
+    });
+    const bank = inverterWithParallelUnits(single, 3);
+    expect(bank.ratedW).toBe(15000);
+    expect(bank.surgeW).toBe(30000);
+    expect(bank.maxPvInputW).toBe(18000);
+    expect(bank.maxChargeA).toBe(300);
+    expect(bank.maxDischargeA).toBe(300);
+    expect(bank.mppt).toHaveLength(3);
+    expect(bank.maxPvVoltageV).toBe(single.maxPvVoltageV);
+  });
+
+  it('no permite paralelizar modelos sin capacidad declarada en el catálogo', () => {
+    const single = inverter({ ratedW: 5000, maxParallelUnits: undefined });
+    expect(inverterWithParallelUnits(single, 4).ratedW).toBe(5000);
   });
 
   it('no recomienda ningún inversor si todos fallan el arranque', () => {
