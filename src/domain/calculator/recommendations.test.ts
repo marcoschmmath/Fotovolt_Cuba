@@ -94,7 +94,16 @@ describe('generateSolarRecommendations', () => {
       household: source,
       panels: [panel()],
       batteries: [battery()],
-      inverters: [inverter()],
+      inverters: [inverter({
+        // Este caso necesita más de 14 módulos para cubrir la primera hora
+        // solar. Se amplían entrada y capacidad MPPT para que la instalación
+        // que esperamos seleccionar sea realmente admisible.
+        maxPvInputW: 12000,
+        mppt: [
+          { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
+          { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
+        ],
+      })],
       // Fuerza un objetivo FV inicial inferior a un panel, sin hacer inviable
       // el banco: 5 kWh queda dentro del intervalo permitido para 3 kWh nocturnos.
       params: params({ hsp: 2.5, safetyFactor: 0.01 }),
@@ -136,7 +145,13 @@ describe('generateSolarRecommendations', () => {
         system: debugSystem,
         panel: panel(),
         battery: battery(),
-        inverter: inverter(),
+        inverter: inverter({
+          maxPvInputW: 12000,
+          mppt: [
+            { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
+            { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
+          ],
+        }),
       }, 'usual');
       return {
         panelCount,
