@@ -8,6 +8,9 @@ import {
 import { batteryPack } from './battery';
 import type { HouseholdProfile } from '../household/types';
 import { DEFAULT_COOKING, defaultCookingActivities } from '../household/types';
+import { householdForRecommendation } from '../household/recommendationProfile';
+import { evaluateCompatibleSystemBehavior, evaluateSystemBehavior } from '../simulator/scenarioGrid';
+import type { SystemConfiguration } from '../system/types';
 import { appliance, battery, inverter, panel, params } from '../../test/fixtures';
 
 function household(): HouseholdProfile {
@@ -122,6 +125,47 @@ describe('generateSolarRecommendations', () => {
     expect(progressPhases).toContain('generating');
     expect(progressPhases).toContain('validating');
     expect(progressPhases).toContain('complete');
+
+    // El camino rápido del recomendador debe devolver las mismas métricas
+    // que la evaluación detallada cuando la instalación supera los escenarios.
+    const recommendation = result[0].recommendation!;
+    const scenarioHousehold = householdForRecommendation(source, recommendation.tier);
+    const designParams = params();
+    const system: SystemConfiguration = {
+      id: 'equivalence-test',
+      householdProfileId: source.id,
+      recommendationTier: recommendation.tier,
+      name: 'Equivalencia',
+      panelId: recommendation.panel.id,
+      panelCount: recommendation.panelCount,
+      batteryId: recommendation.battery.id,
+      batteryCount: recommendation.batteryCount,
+      inverterId: recommendation.inverter.id,
+      inverterCount: recommendation.inverterCount,
+      installationType: 'hybrid',
+      params: designParams,
+      origin: 'user',
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt: '2026-01-01T00:00:00.000Z',
+    };
+    const evaluationInput = {
+      household: scenarioHousehold,
+      system,
+      panel: recommendation.panel,
+      battery: recommendation.battery,
+      inverter: recommendation.inverter,
+    };
+    const detailed = evaluateSystemBehavior(evaluationInput, 'usual');
+    const compact = evaluateCompatibleSystemBehavior(evaluationInput, 'usual');
+    expect(compact).not.toBeNull();
+    expect(compact?.coverageWorst).toBe(detailed.coverageWorst);
+    expect(compact?.energySustainable).toBe(detailed.energySustainable);
+    expect(compact?.cookingMealsUnmetWorst).toBe(detailed.cookingMealsUnmetWorst);
+    expect(compact?.unservedKwhWorst).toBe(detailed.unservedKwhWorst);
+    expect(compact?.blackout.coverage).toBe(detailed.blackout.coverage);
+    expect(compact?.scenarios.map((scenario) => scenario.finalSoc)).toEqual(
+      detailed.scenarios.map((scenario) => scenario.finalSoc),
+    );
     expect(source.appliances).toHaveLength(3);
   });
 });
