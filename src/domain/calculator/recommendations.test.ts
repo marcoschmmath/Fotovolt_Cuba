@@ -68,6 +68,34 @@ describe('filtros del recomendador', () => {
 });
 
 describe('generateSolarRecommendations', () => {
+  it('prueba arrays mayores cuando el tamaño FV inicial no sostiene la demanda', () => {
+    const source = household();
+    source.appliances[1] = appliance({
+      id: 'important-day',
+      name: 'Carga diurna',
+      powerW: 700,
+      hoursPerDay: 4.5,
+      schedule: 'day',
+      priority: 'important',
+    });
+
+    const result = generateSolarRecommendations({
+      household: source,
+      panels: [panel()],
+      batteries: [battery({ nominalKwh: 1.4 })],
+      inverters: [inverter()],
+      // Fuerza un objetivo inicial pequeño deliberadamente. La prueba verifica
+      // que la búsqueda no se detenga en el primer array técnicamente válido.
+      params: params({ hsp: 2.5, safetyFactor: 0.01 }),
+    });
+
+    const moderate = result.find((card) => card.tier.id === 'moderate');
+    expect(moderate?.recommendation).not.toBeNull();
+    expect(moderate!.recommendation!.panelCount).toBeGreaterThan(
+      Math.ceil(moderate!.recommendation!.targetPvW / panel().powerW),
+    );
+  });
+
   it('genera tres niveles aplicando el criterio de compatibilidad existente (08:00, SOC inicial 30 %)', () => {
     const source = household();
     const completedTiers: string[] = [];
