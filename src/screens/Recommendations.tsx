@@ -101,6 +101,7 @@ export function Recommendations({
 
   const [cards, setCards] = useState<RecommendationCard[]>([]);
   const [progress, setProgress] = useState<RecommendationProgress | null>(null);
+  const [progressByTier, setProgressByTier] = useState<Record<string, RecommendationProgress>>({});
   const [generationStatus, setGenerationStatus] = useState<'running' | 'complete' | 'cancelled' | 'error'>('running');
   const [generationError, setGenerationError] = useState<string | null>(null);
   const [generationAttempt, setGenerationAttempt] = useState(0);
@@ -115,6 +116,7 @@ export function Recommendations({
     workerRef.current = worker;
     setCards([]);
     setProgress(null);
+    setProgressByTier({});
     setGenerationError(null);
     setGenerationStatus('running');
 
@@ -122,6 +124,10 @@ export function Recommendations({
       const message = event.data;
       if (message.type === 'progress') {
         setProgress(message.progress);
+        setProgressByTier((current) => ({
+          ...current,
+          [message.progress.tierId]: message.progress,
+        }));
       } else if (message.type === 'tier') {
         setCards((current) => [
           ...current.filter((card) => card.tier.id !== message.card.tier.id),
@@ -236,7 +242,7 @@ export function Recommendations({
           <p className="result-description" aria-live="polite">{progressDescription}</p>
           {progress && (
             <p className="field__hint">
-              {progress.candidatesGenerated} combinaciones generadas · {progress.candidatesValidated} validadas · {progress.scenariosEvaluated} escenarios simulados
+              {progress.candidatesGenerated} combinaciones generadas · {progress.candidatesValidated} validadas · {progress.scenariosEvaluated} escenarios simulados · {progress.technicalChecks ?? 0} comprobaciones técnicas
             </p>
           )}
           <div className="recommendation-progress" aria-hidden="true">
@@ -278,6 +284,18 @@ export function Recommendations({
           )}
         </section>
       ))}
+      {generationStatus === 'complete' && (
+        <details className="recommendation-search-stats">
+          <summary>Estadísticas de la búsqueda</summary>
+          <ul>
+            {Object.values(progressByTier).map((item) => (
+              <li key={item.tierId}>
+                <strong>{item.tierId}</strong>: {item.candidatesGenerated} candidatas · {item.candidatesValidated} simuladas · {item.scenariosEvaluated} escenarios · {item.technicalChecks ?? 0} chequeos técnicos ({item.technicalRejections ?? 0} descartes técnicos) · {item.elapsedMs ?? 0} ms totales
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
       {generationStatus === 'complete' && cards.every((card) => !card.recommendation) && (
       <Panel tone="paper">
         <h3>¿No aparece una propuesta?</h3>
