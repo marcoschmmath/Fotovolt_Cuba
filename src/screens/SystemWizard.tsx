@@ -301,7 +301,7 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
         <div className="stat-grid stat-grid--four">
           <Stat tone="solar" value={fmtW(installedW)} label="Paneles conectados" sub={`${draft.panelCount} × ${panel?.powerW ?? 0} W`} />
           <Stat tone="storage" value={fmtKwh(bankKwh)} label="Batería instalada" sub={`${draft.batteryCount} × ${battery?.nominalKwh ?? 0} kWh`} />
-          <Stat value={inverter ? fmtW(inverter.ratedW) : '—'} label="Inversor" sub={inverter?.gridChargerW ? 'Carga desde red' : 'Sólo solar'} />
+          <Stat value={effectiveInverter ? fmtW(effectiveInverter.ratedW) : '—'} label="Inversor" sub={`${draft.inverterCount ?? 1} unidad(es) · ${inverter?.gridChargerW ? 'Carga desde red' : 'Sólo solar'}`} />
           <Stat value={pack ? `${Math.round(pack.usableKwh * 10) / 10} kWh` : '—'} label="Energía utilizable" sub="Según DoD y SOC mínimo" />
         </div>
         {technicalCheck && technicalCheck.status !== 'verified' && (
