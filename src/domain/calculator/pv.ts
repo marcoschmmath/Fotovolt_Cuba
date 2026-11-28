@@ -325,23 +325,6 @@ function emptyBalancedResult(
   return { status, feasible: false, panelsPerString: 0, totalStrings: 0, stringsPerMppt: [], notes, violations };
 }
 
-function chooseIndices(values: number[], count: number): number[][] {
-  const result: number[][] = [];
-  const visit = (start: number, chosen: number[]) => {
-    if (chosen.length === count) {
-      result.push([...chosen]);
-      return;
-    }
-    for (let index = start; index <= values.length - (count - chosen.length); index += 1) {
-      chosen.push(values[index]);
-      visit(index + 1, chosen);
-      chosen.pop();
-    }
-  };
-  visit(0, []);
-  return result;
-}
-
 /**
  * Busca una configuración eléctricamente posible para el número total de
  * paneles. Todos los strings usan el mismo número de módulos en serie. Si hay
@@ -445,32 +428,26 @@ export function checkBalancedArrayConfiguration(
     if (available.length === 0) continue;
 
     const maxUsed = Math.min(strings, available.length);
+    // Para un número fijo de MPPT usados, elegir los de mayor capacidad es
+    // óptimo: cada canal recibe baseStrings o baseStrings + 1. Enumerar todos
+    // los subconjuntos era exponencial y se volvía prohibitivo con inversores
+    // paralelos (hasta 32 entradas MPPT en los modelos del catálogo).
+    const byCapacity = [...available].sort((a, b) => b.capacity - a.capacity);
     for (let used = maxUsed; used >= 1; used -= 1) {
-      const subsets = chooseIndices(available.map((entry) => entry.channelIndex), used);
-      let foundForSeries = false;
-      for (const subset of subsets) {
-        const baseStrings = Math.floor(strings / used);
-        const extraStrings = strings % used;
-        const ordered = [...subset].sort((a, b) => {
-          const capA = available.find((entry) => entry.channelIndex === a)?.capacity ?? 0;
-          const capB = available.find((entry) => entry.channelIndex === b)?.capacity ?? 0;
-          return capB - capA;
-        });
-        const assigned = new Array<number>(inverter.mppt.length).fill(0);
-        let valid = true;
-        ordered.forEach((channelIndex, rank) => {
-          const assignedStrings = baseStrings + (rank < extraStrings ? 1 : 0);
-          const capacity = available.find((entry) => entry.channelIndex === channelIndex)?.capacity ?? 0;
-          if (assignedStrings > capacity) valid = false;
-          assigned[channels[channelIndex].index] = assignedStrings;
-        });
-        if (valid) {
-          candidates.push({ series, strings, counts: assigned, used });
-          foundForSeries = true;
-          break;
-        }
+      const selected = byCapacity.slice(0, used);
+      const baseStrings = Math.floor(strings / used);
+      const extraStrings = strings % used;
+      const assigned = new Array<number>(inverter.mppt.length).fill(0);
+      let valid = true;
+      selected.forEach((entry, rank) => {
+        const assignedStrings = baseStrings + (rank < extraStrings ? 1 : 0);
+        if (assignedStrings > entry.capacity) valid = false;
+        assigned[channels[entry.channelIndex].index] = assignedStrings;
+      });
+      if (valid) {
+        candidates.push({ series, strings, counts: assigned, used });
+        break;
       }
-      if (foundForSeries) break;
     }
   }
 
