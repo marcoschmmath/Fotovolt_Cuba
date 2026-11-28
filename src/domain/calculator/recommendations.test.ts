@@ -50,7 +50,7 @@ describe('generateSolarRecommendations', () => {
     const result = generateSolarRecommendations({
       household: source,
       panels: [panel()],
-      batteries: [battery()],
+      batteries: [battery({ nominalKwh: 1.4 })],
       inverters: [inverter()],
       params: params(),
     });
