@@ -268,7 +268,9 @@ export function evaluateCompatibleSystemBehavior(
   onScenarioEvaluated?: (scenario: GridReturnScenario) => void,
 ): BehaviorOutcome | null {
   return evaluateBehavior(input, mode, {
-    collectIntervals: false,
+    // Until compact-vs-detailed equivalence is stress-tested with cooking and
+    // custom grid profiles, keep the same interval materialization as Result.
+    collectIntervals: true,
     rejectIncompatibleEarly: true,
     onScenarioEvaluated,
   });
