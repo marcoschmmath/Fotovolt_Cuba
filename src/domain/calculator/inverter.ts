@@ -5,7 +5,7 @@ import type {
   InverterSpec,
   PanelSpec,
 } from '../core/types';
-import { checkBalancedArrayConfiguration } from './pv';
+import { checkBalancedArrayConfiguration, type BalancedArrayConfigurationCheck } from './pv';
 
 export type TechnicalVerificationStatus = 'verified' | 'partial' | 'incompatible';
 
@@ -55,6 +55,8 @@ export function checkInverterCompatibility(options: {
   panelCount: number;
   /** Número de baterías en paralelo; escala la potencia total admisible del BMS. */
   batteryCount?: number;
+  /** Resultado cacheado para no recalcular strings en búsquedas combinatorias. */
+  arrayCheck?: BalancedArrayConfigurationCheck;
   continuousW: number;
   peakW: number;
   voltage: 110 | 220 | 'both';
@@ -136,7 +138,7 @@ export function checkInverterCompatibility(options: {
     add(diagnostics, 'info', 'PV_INPUT_UNKNOWN', 'No se declara la potencia fotovoltaica máxima admitida. No se puede comprobar el tamaño total del campo solar.');
   }
 
-  const arrayCheck = checkBalancedArrayConfiguration(panel, inverter, panelCount, params);
+  const arrayCheck = options.arrayCheck ?? checkBalancedArrayConfiguration(panel, inverter, panelCount, params);
   if (arrayCheck.status === 'insufficient') {
     add(
       diagnostics,
