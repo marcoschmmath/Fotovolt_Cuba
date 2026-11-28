@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkBalancedArrayConfiguration, checkStringDesign, irradianceAt, pvDcPowerAt, usablePvLimitW } from './pv';
 import { inverter, panel, params, battery } from '../../test/fixtures';
+import { inverterWithParallelUnits } from './inverter';
 import { solarFromParams } from '../core/defaults';
 
 describe('modelo fotovoltaico', () => {
@@ -154,6 +155,24 @@ describe('modelo fotovoltaico', () => {
     );
     expect(check.status).toBe('insufficient');
     expect(check.feasible).toBe(false);
+  });
+
+
+  it('comprueba un banco de 16 inversores (32 MPPT) sin enumerar subconjuntos', () => {
+    const single = inverter({
+      maxPvInputW: 10000,
+      maxParallelUnits: 16,
+      mppt: [
+        { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 },
+        { maxVoltageV: 450, minVoltageV: 80, maxCurrentA: 40, maxPowerW: 6000 },
+      ],
+    });
+    const bank = inverterWithParallelUnits(single, 16);
+    const check = checkBalancedArrayConfiguration(panel(), bank, 48, params());
+    expect(bank.mppt).toHaveLength(32);
+    expect(check.status).toBe('verified');
+    expect(check.panelsPerString * check.totalStrings).toBe(48);
+    expect(check.stringsPerMppt.reduce((sum, count) => sum + count, 0)).toBe(check.totalStrings);
   });
 
   it('la plantilla de batería declara su carácter orientativo', () => {
