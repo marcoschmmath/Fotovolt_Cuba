@@ -96,8 +96,10 @@ describe('generateSolarRecommendations', () => {
       batteries: [battery()],
       inverters: [inverter({
         // Este caso necesita más de 14 módulos para cubrir la primera hora
-        // solar. Se amplían entrada y capacidad MPPT para que la instalación
-        // que esperamos seleccionar sea realmente admisible.
+        // solar. Se usa un inversor de 8 kW con 12 kW de entrada FV para que
+        // los arrays mayores que esperamos seleccionar sean admisibles.
+        ratedW: 8000,
+        surgeW: 16000,
         maxPvInputW: 12000,
         mppt: [
           { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
@@ -146,6 +148,8 @@ describe('generateSolarRecommendations', () => {
         panel: panel(),
         battery: battery(),
         inverter: inverter({
+          ratedW: 8000,
+          surgeW: 16000,
           maxPvInputW: 12000,
           mppt: [
             { minVoltageV: 120, maxVoltageV: 450, maxCurrentA: 40, maxPowerW: 10000 },
