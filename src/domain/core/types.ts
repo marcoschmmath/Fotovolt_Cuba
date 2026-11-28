@@ -325,6 +325,10 @@ export interface SimulationResult {
   diagnostics: Diagnostic[];
   /** Cocción planificada durante la simulación, cuando el perfil la declara. */
   cooking?: CookingPlanSummary;
+  /** Resúmenes acumulados durante el bucle, también disponibles sin guardar intervalos. */
+  summary?: {
+    nightDeficitKwh: number;
+  };
   /** Diferencia AC entre entradas y salidas por intervalo (debe ser ~0). */
   maxBalanceErrorKwh: number;
   valid: boolean;
