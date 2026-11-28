@@ -168,7 +168,7 @@ function aggregate(
  * comportamientos de cocción. Devuelve el conjunto completo (el motor corre
  * 50 veces sobre series de 96 intervalos: sigue siendo análisis instantáneo).
  */
-export function evaluateSystem(input: EvaluationInput): SystemEvaluation {
+function evaluateBehavior(input: EvaluationInput, mode: CookingMode): BehaviorOutcome {
   const { household, system } = input;
   const params = system.params;
   const floor = socFloorByInterval(household, params, input.battery, system.batteryCount, input.inverter);
@@ -178,39 +178,49 @@ export function evaluateSystem(input: EvaluationInput): SystemEvaluation {
   const blackout = blackoutScenario(params);
   const cooking: CookingRuntimeInput = {
     activities: household.activities,
-    mode: 'usual',
+    mode,
     substitution: household.cooking.substitution,
     hasFuel: household.cooking.fuelKind !== null && household.cooking.fuelConfirmed,
   };
-  const run = (bridge: BridgeInput, mode: 'usual' | 'flexible'): SimulationResult =>
-    simulate(buildEnergySystemConfig(bridge), {
-      cooking: { ...cooking, mode },
+  const bridge = (gridAvailable: boolean[]): BridgeInput => ({
+    household,
+    system,
+    panel: input.panel,
+    battery: input.battery,
+    inverter: input.inverter,
+    gridAvailable,
+  });
+  const run = (gridAvailable: boolean[]): SimulationResult =>
+    simulate(buildEnergySystemConfig(bridge(gridAvailable)), {
+      cooking,
       socFloorByInterval: floor,
       startHour: 8,
       startSoc: initialSoc,
     });
+  const nightWindow = { start: params.nightStart, end: params.nightEnd };
+  const outcomes = scenarios.map((scenario) =>
+    outcomeOf(scenario, run(scenario.available), nightWindow),
+  );
+  const blackoutOutcome = outcomeOf(blackout, run(blackout.available), nightWindow);
+  return aggregate(mode, outcomes, blackoutOutcome, initialSoc);
+}
 
-  const evaluateMode = (mode: 'usual' | 'flexible'): BehaviorOutcome => {
-    const nightWindow = { start: params.nightStart, end: params.nightEnd };
-    const bridge = (gridAvailable: boolean[]): BridgeInput => ({
-      household,
-      system,
-      panel: input.panel,
-      battery: input.battery,
-      inverter: input.inverter,
-      gridAvailable,
-    });
-    const outcomes = scenarios.map((scenario) => outcomeOf(scenario, run(bridge(scenario.available), mode), nightWindow));
-    const blackoutOutcome = outcomeOf(blackout, run(bridge(blackout.available), mode), nightWindow);
-    return aggregate(mode, outcomes, blackoutOutcome, initialSoc);
-  };
+/** Evalúa un único comportamiento; el recomendador sólo necesita el habitual. */
+export function evaluateSystemBehavior(
+  input: EvaluationInput,
+  mode: CookingMode = 'usual',
+): BehaviorOutcome {
+  return evaluateBehavior(input, mode);
+}
 
+/** Evaluación completa utilizada por Resultados y Comparaciones. */
+export function evaluateSystem(input: EvaluationInput): SystemEvaluation {
   return {
     behaviors: {
-      usual: evaluateMode('usual'),
-      flexible: evaluateMode('flexible'),
+      usual: evaluateBehavior(input, 'usual'),
+      flexible: evaluateBehavior(input, 'flexible'),
     },
-    scenarios,
+    scenarios: gridReturnScenarios(input.system.params),
   };
 }
 
