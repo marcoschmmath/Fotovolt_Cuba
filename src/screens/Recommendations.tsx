@@ -228,12 +228,12 @@ export function Recommendations({
         description="Las propuestas usan los equipos de tu catálogo y se validan con los mismos escenarios de 24 horas y criterios energéticos que la pantalla de Resultados."
       />
       {generationStatus === 'running' && (
-        <Panel tone="paper" className="recommendation-calculation" aria-live="polite">
+        <Panel tone="paper" className="recommendation-calculation">
           <div className="panel__head">
             <h3>Calculando recomendaciones</h3>
             <Badge tone="storage">En segundo plano</Badge>
           </div>
-          <p className="result-description">{progressDescription}</p>
+          <p className="result-description" aria-live="polite">{progressDescription}</p>
           {progress && (
             <p className="field__hint">
               {progress.candidatesGenerated} combinaciones generadas · {progress.candidatesValidated} validadas · {progress.scenariosEvaluated} escenarios simulados
