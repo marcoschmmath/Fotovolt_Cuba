@@ -1,6 +1,11 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useApp } from '../app/AppContext';
-import { generateSolarRecommendations, type SolarRecommendation } from '../domain/calculator/recommendations';
+import type {
+  RecommendationCard,
+  RecommendationProgress,
+  RecommendationWorkerResponse,
+  SolarRecommendation,
+} from '../domain/calculator/recommendations';
 import { systemParams, type SystemConfiguration } from '../domain/system/types';
 import { uid } from '../domain/persistence/storage';
 import { Badge, Button, Note, Panel, SectionTitle, Stat, fmtKwh, fmtW } from '../ui/components';
@@ -94,16 +99,89 @@ export function Recommendations({
     return saved?.params ?? systemParams();
   }, [state.installations, state.activeInstallationId, household?.id]);
 
-  const cards = useMemo(() => {
-    if (!household) return [];
-    return generateSolarRecommendations({
-      household,
-      panels: state.panels,
-      batteries: state.batteries,
-      inverters: state.inverters,
-      params,
+  const [cards, setCards] = useState<RecommendationCard[]>([]);
+  const [progress, setProgress] = useState<RecommendationProgress | null>(null);
+  const [generationStatus, setGenerationStatus] = useState<'running' | 'complete' | 'cancelled' | 'error'>('running');
+  const [generationError, setGenerationError] = useState<string | null>(null);
+  const [generationAttempt, setGenerationAttempt] = useState(0);
+  const workerRef = useRef<Worker | null>(null);
+
+  useEffect(() => {
+    if (!household) return;
+    const worker = new Worker(
+      new URL('../domain/calculator/recommendations.worker.ts', import.meta.url),
+      { type: 'module' },
+    );
+    workerRef.current = worker;
+    setCards([]);
+    setProgress(null);
+    setGenerationError(null);
+    setGenerationStatus('running');
+
+    worker.onmessage = (event: MessageEvent<RecommendationWorkerResponse>) => {
+      const message = event.data;
+      if (message.type === 'progress') {
+        setProgress(message.progress);
+      } else if (message.type === 'tier') {
+        setCards((current) => [
+          ...current.filter((card) => card.tier.id !== message.card.tier.id),
+          message.card,
+        ]);
+      } else if (message.type === 'complete') {
+        setCards(message.cards);
+        setGenerationStatus('complete');
+        worker.terminate();
+        if (workerRef.current === worker) workerRef.current = null;
+      } else if (message.type === 'error') {
+        setGenerationError(message.message);
+        setGenerationStatus('error');
+        worker.terminate();
+        if (workerRef.current === worker) workerRef.current = null;
+      }
+    };
+
+    worker.onerror = (event) => {
+      setGenerationError(event.message || 'Error inesperado al calcular las recomendaciones.');
+      setGenerationStatus('error');
+      worker.terminate();
+      if (workerRef.current === worker) workerRef.current = null;
+    };
+
+    worker.postMessage({
+      input: {
+        household,
+        panels: state.panels,
+        batteries: state.batteries,
+        inverters: state.inverters,
+        params,
+      },
     });
-  }, [household, state.panels, state.batteries, state.inverters, params]);
+
+    return () => {
+      worker.terminate();
+      if (workerRef.current === worker) workerRef.current = null;
+    };
+  }, [household, state.panels, state.batteries, state.inverters, params, generationAttempt]);
+
+  function cancelGeneration() {
+    workerRef.current?.terminate();
+    workerRef.current = null;
+    setGenerationStatus('cancelled');
+  }
+
+  function retryGeneration() {
+    setGenerationAttempt((attempt) => attempt + 1);
+  }
+
+  const progressDescription = progress
+    ? progress.phase === 'preparing'
+      ? `Preparando el nivel ${progress.tierId}…`
+      : progress.phase === 'generating'
+        ? `Generando combinaciones para ${progress.tierId}…`
+        : progress.phase === 'validating'
+          ? `Validando ${progress.tierId}: ${progress.candidatesValidated} candidatas probadas.`
+          : `Nivel ${progress.tierId} completado.`
+    : 'Preparando los datos de consumo y el catálogo de equipos…';
 
   function saveRecommendation(recommendation: SolarRecommendation) {
     if (!household) return;
@@ -149,6 +227,37 @@ export function Recommendations({
         title="Tres formas de alimentar tu vivienda"
         description="Las propuestas usan los equipos de tu catálogo y se validan con los mismos escenarios de 24 horas y criterios energéticos que la pantalla de Resultados."
       />
+      {generationStatus === 'running' && (
+        <Panel tone="paper" className="recommendation-calculation" aria-live="polite">
+          <div className="panel__head">
+            <h3>Calculando recomendaciones</h3>
+            <Badge tone="storage">En segundo plano</Badge>
+          </div>
+          <p className="result-description">{progressDescription}</p>
+          {progress && (
+            <p className="field__hint">
+              {progress.candidatesGenerated} combinaciones generadas · {progress.candidatesValidated} validadas · {progress.scenariosEvaluated} escenarios simulados
+            </p>
+          )}
+          <div className="recommendation-progress" aria-hidden="true">
+            <span />
+          </div>
+          <p className="field__hint">Puedes seguir usando esta página mientras se calcula. Las propuestas aparecerán una por una.</p>
+          <Button variant="quiet" onClick={cancelGeneration}>Cancelar cálculo</Button>
+        </Panel>
+      )}
+      {generationStatus === 'cancelled' && (
+        <Note level="warning" title="Cálculo cancelado">
+          Las propuestas que ya se habían completado siguen disponibles. Puedes reiniciar la búsqueda.
+          <Button variant="outline" onClick={retryGeneration}>Volver a calcular</Button>
+        </Note>
+      )}
+      {generationStatus === 'error' && (
+        <Note level="warning" title="No se pudo completar el cálculo">
+          {generationError ?? 'Ocurrió un error inesperado.'}
+          <Button variant="outline" onClick={retryGeneration}>Reintentar</Button>
+        </Note>
+      )}
       <Note level="info" title="Qué significa que una propuesta sea viable">
         Se reutiliza exactamente la evaluación energética existente: comienza a las 08:00 con SOC inicial igual al mayor entre el 30 % y el SOC mínimo físico de la batería, y termina a las 08:00 del día siguiente. Se comprueban los 24 escenarios de retorno de red. La compatibilidad energética exige cobertura mínima del 99,9 %, SOC final sostenible respecto al inicial y ninguna comida eléctrica sin atender, igual que en Resultados. El apagón total se evalúa y muestra por separado.
         <p className="field__hint">Hipótesis utilizadas: {params.hsp.toFixed(1)} HSP, eficiencia global {Math.round(params.systemEfficiency * 100)} %, sombra/suciedad {Math.round(params.shading * 100)} % y temperatura ambiente {params.ambientC} °C.</p>
@@ -169,6 +278,7 @@ export function Recommendations({
           )}
         </section>
       ))}
+      {generationStatus === 'complete' && cards.every((card) => !card.recommendation) && (
       <Panel tone="paper">
         <h3>¿No aparece una propuesta?</h3>
         <p className="result-description">Puede faltar potencia fotovoltaica admisible, una batería con capacidad o corriente suficiente, o un inversor compatible con la tensión y los consumos de la vivienda.</p>
@@ -179,6 +289,7 @@ export function Recommendations({
         <p className="field__hint">También puedes continuar con el diseño manual sin perder este perfil.</p>
         <Button variant="dark" onClick={() => navigate('/instalacion?hogar=' + household.id)}>Diseñar manualmente</Button>
       </Panel>
+      )}
     </div>
   );
 }
