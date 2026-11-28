@@ -142,31 +142,6 @@ export function batteryBankFitsNightEnergy(nightKwh: number, bankKwh: number): b
   return 3 * bankKwh > nightKwh && bankKwh <= 2 * nightKwh;
 }
 
-/** Cota inferior exacta para restricciones que escalan linealmente al paralelizar. */
-export function minimumParallelUnitsForCandidate(options: {
-  inverter: InverterSpec;
-  battery: BatterySpec;
-  targetPvW: number;
-  requiredContinuousW: number;
-  requiredPeakW: number;
-  params: DesignParams;
-}): number {
-  const { inverter, battery, targetPvW, requiredContinuousW, requiredPeakW, params } = options;
-  const dischargeEfficiency = battery.dischargeEff > 0 ? battery.dischargeEff : params.batteryDischargeEff;
-  const inverterEfficiency = inverter.efficiency > 0 ? inverter.efficiency : params.inverterEfficiency;
-  const dcDischargeW = requiredPeakW / Math.max(0.1, dischargeEfficiency * inverterEfficiency);
-  const requiredDischargeA = battery.nominalV > 0 ? dcDischargeW / battery.nominalV : 0;
-  const bounds = [
-    Math.ceil((requiredContinuousW * 1.1) / inverter.ratedW),
-    inverter.surgeW > 0 ? Math.ceil(requiredPeakW / inverter.surgeW) : 1,
-    Math.ceil(targetPvW / inverter.maxPvInputW),
-    inverter.maxDischargeA > 0 && requiredDischargeA > 0
-      ? Math.ceil(requiredDischargeA / inverter.maxDischargeA)
-      : 1,
-  ];
-  return Math.max(1, ...bounds.filter(Number.isFinite));
-}
-
 function hasDeclaredLoad(household: HouseholdProfile): boolean {
   return household.appliances.some((appliance) =>
     appliance.quantity > 0 && appliance.hoursPerDay > 0 && appliance.powerW > 0,
@@ -293,7 +268,7 @@ function findTierRecommendation(
   let validationStartedAt = 0;
   let technicalChecks = 0;
   let technicalRejections = 0;
-  let parallelUnitsSkipped = 0;
+  const parallelUnitsSkipped = 0;
   let candidatesValidated = 0;
   let scenariosEvaluated = 0;
 
@@ -367,18 +342,10 @@ function findTierRecommendation(
     const { battery, batteryCount, targetBatteryKwh, targetPvW } = batteryOption;
     for (const inverter of inverters) {
       const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
-      const minUnits = minimumParallelUnitsForCandidate({
-        inverter,
-        battery,
-        targetPvW,
-        requiredContinuousW,
-        requiredPeakW,
-        params,
-      });
-      parallelUnitsSkipped += Math.max(0, minUnits - 1);
-      if (minUnits > maxUnits) continue;
-
-      for (let inverterCount = minUnits; inverterCount <= maxUnits; inverterCount += 1) {
+      // Por seguridad, no saltar unidades basándose en cotas calculadas:
+      // el chequeo eléctrico real determina cuáles son admisibles.
+      // La ordenación posterior prueba las configuraciones menores primero.
+      for (let inverterCount = 1; inverterCount <= maxUnits; inverterCount += 1) {
         const effective = inverterWithParallelUnits(inverter, inverterCount);
         const voltageDifference = Math.abs(battery.nominalV - effective.batteryVoltageV);
         if (
