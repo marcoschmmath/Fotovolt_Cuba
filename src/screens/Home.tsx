@@ -20,6 +20,8 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
   const households = state.households;
   const installations = state.installations;
   const simulations = state.simulations;
+  const currentHousehold = households.find((h) => h.id === state.activeHouseholdId) ?? households[0] ?? null;
+  const openHousehold = () => navigate(currentHousehold ? `/hogar?id=${currentHousehold.id}` : '/hogar');
 
   const duplicateHousehold = (id: string) => {
     const source = households.find((h) => h.id === id);
@@ -84,16 +86,16 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
       </section>
 
       <div className="home-action-list" aria-label="Comenzar">
-        <button type="button" className="home-action-card" onClick={() => navigate('/hogar')}>
+        <button type="button" className="home-action-card home-action-card--primary" onClick={openHousehold}>
           <span className="home-action-card__icon"><Icon name="home" size={25} /></span>
           <span className="home-action-card__copy">
-            <strong>Agrega los equipos que deseas mantener encendidos</strong>
-            <small>Configura tu vivienda y tus hábitos de consumo.</small>
+            <strong>Calcular consumo de mi vivienda</strong>
+            <small>Selecciona tus equipos y hábitos; podrás reutilizar este perfil.</small>
           </span>
           <Icon name="chevron" size={20} />
         </button>
         <button type="button" className="home-action-card" onClick={() => {
-          const household = households.find((h) => h.id === state.activeHouseholdId) ?? households[0];
+          const household = currentHousehold;
           if (!household) {
             navigate('/hogar');
             return;
@@ -103,8 +105,8 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
         }}>
           <span className="home-action-card__icon"><Icon name="inverter" size={25} /></span>
           <span className="home-action-card__copy">
-            <strong>Agrega tu sistema fotovoltaico y simula</strong>
-            <small>Paneles, baterías e inversor para tu vivienda.</small>
+            <strong>Diseñar una instalación solar</strong>
+            <small>Compara paneles, baterías e inversores para una vivienda guardada.</small>
           </span>
           <Icon name="chevron" size={20} />
         </button>
@@ -117,7 +119,9 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
       </div>
 
       {/* 2. Qué resuelve, en tres pasos (sin tarjetas repetidas) */}
-      <ol className="home-flow">
+      <details className="home-how">
+        <summary><span>Cómo funciona Fotovolt Cuba</span><Icon name="chevron" size={16} /></summary>
+        <ol className="home-flow">
         <li>
           <span className="home-flow__n" aria-hidden="true">1</span>
           <div>
@@ -139,7 +143,8 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
             <p>Pega lo que te ofrecen y te digo, con tus números, si sirve en tu casa.</p>
           </div>
         </li>
-      </ol>
+        </ol>
+      </details>
 
       <section className="stack" aria-labelledby="mis-viviendas">
         <div className="row row--between">
