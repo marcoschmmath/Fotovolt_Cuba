@@ -3,7 +3,7 @@ import { useApp } from '../app/AppContext';
 import { DEFAULT_CUBA_RESIDENTIAL_GRID_LIMIT_W } from '../domain/core/defaults';
 import { batteryPack } from '../domain/calculator/battery';
 import { analyzeEnergy, peakDesignW } from '../domain/calculator/energy';
-import { checkInverterCompatibility } from '../domain/calculator/inverter';
+import { checkInverterCompatibility, inverterWithParallelUnits } from '../domain/calculator/inverter';
 import { checkBalancedArrayConfiguration } from '../domain/calculator/pv';
 import { householdForRecommendation } from '../domain/household/recommendationProfile';
 import { uid } from '../domain/persistence/storage';
@@ -50,6 +50,7 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
         batteryId: state.batteries[0]?.id ?? '',
         batteryCount: 1,
         inverterId: state.inverters[0]?.id ?? '',
+        inverterCount: 1,
         installationType: 'hybrid',
         params: systemParams(),
         origin: 'user',
@@ -117,15 +118,16 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
     ? householdForRecommendation(household, draft.recommendationTier)
     : household;
   const householdDemand = analyzeEnergy(designHousehold.appliances, draft.params);
+  const effectiveInverter = inverter ? inverterWithParallelUnits(inverter, draft.inverterCount ?? 1) : null;
   const technicalCheck = panel && battery && inverter && draft.panelCount > 0 && draft.batteryCount > 0
     ? checkInverterCompatibility({
-        inverter, battery, panel, panelCount: draft.panelCount, batteryCount: draft.batteryCount,
+        inverter: effectiveInverter!, battery, panel, panelCount: draft.panelCount, batteryCount: draft.batteryCount,
         continuousW: householdDemand.peakSimultaneousW,
         peakW: peakDesignW(householdDemand),
         voltage: household.voltage, params: draft.params,
       })
     : null;
-  const gridChargerW = inverter?.gridChargerW ?? 0;
+  const gridChargerW = (inverter?.gridChargerW ?? 0) * (draft.inverterCount ?? 1);
   const basicDataReady = Boolean(
     panel && panel.powerW > 0 && battery && battery.nominalKwh > 0 && battery.nominalV > 0 &&
     inverter && inverter.ratedW > 0 && inverter.maxPvInputW > 0 && inverter.batteryVoltageV > 0
@@ -264,7 +266,7 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
         <div className="divider" />
 
         <Field label="Inversor" htmlFor="system-inverter">
-          <select id="system-inverter" value={draft.inverterId} onChange={(event) => setDraft({ ...draft, inverterId: event.target.value })}>
+          <select id="system-inverter" value={draft.inverterId} onChange={(event) => { const selected = state.inverters.find((item) => item.id === event.target.value); setDraft({ ...draft, inverterId: event.target.value, inverterCount: Math.min(draft.inverterCount ?? 1, selected?.maxParallelUnits ?? 1) }); }}>
             {state.inverters.map((i) => (
               <option key={i.id} value={i.id}>
                 {i.model || i.brand} · {i.ratedW} W
@@ -272,6 +274,7 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
             ))}
           </select>
         </Field>
+        <NumberField label="Unidades de inversor en paralelo" value={draft.inverterCount ?? 1} min={1} max={inverter?.maxParallelUnits ?? 1} step={1} hint={inverter?.maxParallelUnits ? `Este modelo admite hasta ${inverter.maxParallelUnits} unidades en paralelo según su ficha.` : 'El catálogo no declara funcionamiento en paralelo para este modelo; se limita a una unidad.'} onChange={(v) => setDraft({ ...draft, inverterCount: Math.max(1, Math.min(inverter?.maxParallelUnits ?? 1, Math.round(v))) })} />
         <p className="field__hint">
           {gridChargerW > 0
             ? `Este inversor declara cargador AC de ${gridChargerW} W: podrá cargar la batería desde la red.`
