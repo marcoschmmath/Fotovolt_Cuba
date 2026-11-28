@@ -437,7 +437,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
           ? 'No hay equipos con prioridad crítica o importante. Ajusta las prioridades de tu vivienda para generar esta opción.'
           : 'Esta vivienda todavía no tiene consumos suficientes para dimensionar una instalación.';
     } else if (!recommendation) {
-      reason = 'No se encontró una combinación que supere el mismo criterio energético utilizado en Result.tsx: cobertura mínima del 99,9 %, SOC final sostenible en los 24 escenarios de retorno de red y ninguna comida eléctrica sin atender. Revisa las fichas técnicas o amplía el catálogo.';
+      reason = 'No se encontró una combinación viable dentro de los límites residenciales: máximo 10 baterías y 50 paneles; el banco nominal debe ser mayor que un tercio de la energía nocturna y no superar el doble. Sólo se consideran unidades paralelas declaradas por el fabricante. Cada candidata debe alcanzar cobertura mínima del 99,9 %, SOC sostenible en los 24 escenarios y ninguna comida eléctrica sin atender.';
     }
     return { tier, recommendation, reason };
   });
