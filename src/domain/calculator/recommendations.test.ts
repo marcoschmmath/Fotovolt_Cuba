@@ -90,6 +90,7 @@ describe('generateSolarRecommendations', () => {
     });
 
     const moderate = result.find((card) => card.tier.id === 'moderate');
+    expect(moderate).toBeDefined();
     expect(moderate?.recommendation).not.toBeNull();
     expect(moderate!.recommendation!.panelCount).toBeGreaterThan(
       Math.ceil(moderate!.recommendation!.targetPvW / panel().powerW),
