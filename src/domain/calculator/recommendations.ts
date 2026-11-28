@@ -334,6 +334,9 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
                 errors.every((item) => item.code === 'MPPT')) continue;
             break;
           }
+          // TypeScript no deduce que compatible=true excluye status='incompatible'.
+          // Mantener la guarda explícita evita introducir candidatos incompatibles.
+          if (technical.status === 'incompatible') break;
           candidates.push({
             panel, panelCount, battery, batteryCount, inverter, inverterCount,
             targetBatteryKwh, targetPvW, requiredPeakW, technicalStatus: technical.status,
