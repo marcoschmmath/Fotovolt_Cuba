@@ -472,7 +472,10 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
     totals.cookingMealsUnmet = cookingUnmetMeals.length;
   }
 
-  totals.coverage = totals.demandKwh > 0 ? totals.servedKwh / totals.demandKwh : 0;
+  // La cobertura es una fracción física: el redondeo no debe sacarla de [0, 1].
+  totals.coverage = totals.demandKwh > 0
+    ? Math.min(1, Math.max(0, totals.servedKwh / totals.demandKwh))
+    : 0;
   // Fracción solar = energía servida DIRECTAMENTE por los paneles sobre la
   // demanda. La energía PV que sólo recarga la batería no cuenta como servida:
   // con la política híbrida esa batería puede no llegar a usarse nunca.
