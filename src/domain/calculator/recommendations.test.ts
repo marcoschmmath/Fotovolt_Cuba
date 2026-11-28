@@ -3,6 +3,7 @@ import {
   batteryBankFitsNightEnergy,
   generateSolarRecommendations,
   RECOMMENDATION_LIMITS,
+  type RecommendationProgress,
 } from './recommendations';
 import { batteryPack } from './battery';
 import type { HouseholdProfile } from '../household/types';
@@ -70,6 +71,14 @@ describe('filtros del recomendador', () => {
 describe('generateSolarRecommendations', () => {
   it('prueba arrays mayores cuando el tamaño FV inicial no sostiene la demanda', () => {
     const source = household();
+    source.appliances[0] = appliance({
+      id: 'critical-night',
+      name: 'Carga nocturna crítica',
+      powerW: 500,
+      hoursPerDay: 6,
+      schedule: 'night',
+      priority: 'critical',
+    });
     source.appliances[1] = appliance({
       id: 'important-day',
       name: 'Carga diurna',
@@ -79,19 +88,33 @@ describe('generateSolarRecommendations', () => {
       priority: 'important',
     });
 
+    let lastModerateProgress: RecommendationProgress | undefined;
+    let lastModerateRejection: string | undefined;
     const result = generateSolarRecommendations({
       household: source,
       panels: [panel()],
-      batteries: [battery({ nominalKwh: 1.4 })],
+      batteries: [battery()],
       inverters: [inverter()],
-      // Fuerza un objetivo inicial pequeño deliberadamente. La prueba verifica
-      // que la búsqueda no se detenga en el primer array técnicamente válido.
+      // Fuerza un objetivo FV inicial inferior a un panel, sin hacer inviable
+      // el banco: 5 kWh queda dentro del intervalo permitido para 3 kWh nocturnos.
       params: params({ hsp: 2.5, safetyFactor: 0.01 }),
+    }, {
+      onProgress: (progress) => {
+        if (progress.tierId !== 'moderate') return;
+        lastModerateProgress = progress;
+        if (progress.lastEnergyRejection) lastModerateRejection = progress.lastEnergyRejection;
+      },
     });
 
     const moderate = result.find((card) => card.tier.id === 'moderate');
     expect(moderate).toBeDefined();
-    expect(moderate?.recommendation).not.toBeNull();
+    expect(
+      moderate?.recommendation,
+      JSON.stringify({
+        progress: lastModerateProgress,
+        lastEnergyRejection: lastModerateRejection,
+      }),
+    ).not.toBeNull();
     expect(moderate!.recommendation!.panelCount).toBeGreaterThan(
       Math.ceil(moderate!.recommendation!.targetPvW / panel().powerW),
     );
