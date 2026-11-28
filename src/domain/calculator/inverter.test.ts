@@ -131,6 +131,19 @@ describe('compatibilidad del inversor', () => {
     expect(inverterWithParallelUnits(single, 4).ratedW).toBe(5000);
   });
 
+
+  it('sólo habilita cantidades paralelas documentadas para los modelos verificados', () => {
+    expect(VERIFIED_INVERTERS.find((item) => item.id === 'ver-inv-deye-5')?.maxParallelUnits).toBe(16);
+    expect(VERIFIED_INVERTERS.find((item) => item.id === 'ver-inv-srne-10')?.maxParallelUnits).toBe(6);
+    expect(VERIFIED_INVERTERS.find((item) => item.id === 'ver-inv-solis-8')?.maxParallelUnits).toBe(6);
+    expect(VERIFIED_INVERTERS.find((item) => item.id === 'ver-inv-growatt-5')?.maxParallelUnits).toBe(6);
+  });
+
+  it('limita la expansión al máximo declarado por el fabricante', () => {
+    const model = inverter({ ratedW: 5000, maxParallelUnits: 3 });
+    expect(inverterWithParallelUnits(model, 8).ratedW).toBe(15000);
+  });
+
   it('no recomienda ningún inversor si todos fallan el arranque', () => {
     const weak = inverter({ ratedW: 8000, surgeW: 1000 });
     const selected = selectInverter({ ...base, inverters: [weak], peakW: 6000 });
