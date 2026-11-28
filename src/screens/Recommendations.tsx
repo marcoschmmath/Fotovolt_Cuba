@@ -290,7 +290,7 @@ export function Recommendations({
           <ul>
             {Object.values(progressByTier).map((item) => (
               <li key={item.tierId}>
-                <strong>{item.tierId}</strong>: {item.candidatesGenerated} candidatas · {item.candidatesValidated} simuladas · {item.scenariosEvaluated} escenarios · {item.technicalChecks ?? 0} chequeos técnicos ({item.technicalRejections ?? 0} descartes) · {item.parallelUnitsSkipped ?? 0} unidades paralelas omitidas por cota · {item.candidateGenerationMs ?? 0} ms generación + {item.validationMs ?? 0} ms validación = {item.elapsedMs ?? 0} ms
+                <strong>{item.tierId}</strong>: {item.candidatesGenerated} candidatas · {item.candidatesValidated} simuladas · {item.scenariosEvaluated} escenarios · {item.technicalChecks ?? 0} chequeos técnicos ({item.technicalRejections ?? 0} descartes) · {item.candidateGenerationMs ?? 0} ms generación + {item.validationMs ?? 0} ms validación = {item.elapsedMs ?? 0} ms
               </li>
             ))}
           </ul>
