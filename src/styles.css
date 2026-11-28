@@ -1472,3 +1472,118 @@ body { background: #f6f5ef; }
   line-height: 1.45;
 }
 .system-data-guide__list strong { color: var(--forest-700); }
+
+
+/* Selector de equipos inspirado en la maqueta Fotovolt Cuba V4.
+   Se limita a la pantalla de equipos: no altera el resto de la navegación. */
+.appliance-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .6rem;
+  margin-bottom: .8rem;
+}
+.appliance-picker__head h3 { margin: 0; }
+.appliance-picker__more,
+.appliance-picker__custom { margin-top: .8rem; }
+.appliance-picker__hint {
+  margin: .7rem 0 0;
+  color: var(--muted);
+  font-size: .72rem;
+  line-height: 1.4;
+}
+.appliance-picker__form {
+  margin-top: .9rem;
+  padding-top: .9rem;
+  border-top: 1px solid var(--line);
+}
+.appliance-picker .appliance-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .6rem;
+  padding: .15rem 0;
+}
+.appliance-picker .app-tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: 2.45rem auto auto;
+  align-items: start;
+  gap: .42rem .35rem;
+  min-width: 0;
+  min-height: 7.2rem;
+  padding: .8rem;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: #fffefa;
+  color: var(--ink);
+  text-align: left;
+  transition: background .15s ease, border-color .15s ease, box-shadow .15s ease;
+}
+.appliance-picker .app-tile:hover { border-color: #8ab69b; }
+.appliance-picker .app-tile__icon {
+  grid-column: 1;
+  grid-row: 1;
+  display: grid;
+  place-items: center;
+  width: 2.35rem;
+  height: 2.35rem;
+  border-radius: 11px;
+  background: #eef2e8;
+  color: var(--forest-800);
+}
+.appliance-picker .app-tile__name {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  min-width: 0;
+  font-size: .88rem;
+  font-weight: 650;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+.appliance-picker .app-tile__power {
+  grid-column: 1 / -1;
+  grid-row: 3;
+  color: var(--muted);
+  font-size: .7rem;
+  line-height: 1.25;
+}
+.appliance-picker .app-tile__check {
+  grid-column: 2;
+  grid-row: 1;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  margin: .05rem 0 0;
+  border: 1.5px solid #b7beb3;
+  border-radius: 6px;
+  background: transparent;
+  color: transparent;
+}
+.appliance-picker .app-tile.is-selected {
+  border-color: #8ab69b;
+  background: #f0f7ec;
+  box-shadow: inset 0 0 0 1px #8ab69b;
+}
+.appliance-picker .app-tile.is-selected .app-tile__icon {
+  background: #e0eddb;
+  color: var(--forest-800);
+}
+.appliance-picker .app-tile.is-selected .app-tile__check {
+  border-color: var(--forest-800);
+  background: var(--forest-800);
+  color: white;
+}
+@media (min-width: 850px) {
+  .appliance-picker .appliance-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+@media (max-width: 360px) {
+  .appliance-picker .app-tile {
+    min-height: 6.8rem;
+    padding: .68rem;
+  }
+  .appliance-picker .app-tile__name { font-size: .82rem; }
+}

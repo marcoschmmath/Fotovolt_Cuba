@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { APPLIANCE_TEMPLATES, CATEGORIES, templateToAppliance, type ApplianceTemplate } from '../../domain/catalog/appliances';
+import { APPLIANCE_TEMPLATES, templateToAppliance, type ApplianceTemplate } from '../../domain/catalog/appliances';
 import type { Appliance, DesignParams, Priority, Schedule } from '../../domain/core/types';
 import { uid } from '../../domain/persistence/storage';
 import { analyzeEnergy, effectivePowerW, peakDesignW } from '../../domain/calculator/energy';
@@ -18,6 +18,27 @@ const SCHEDULE_OPTIONS: Array<{ value: Schedule; label: string }> = [
   { value: 'both', label: 'Ambos' },
   { value: 'custom', label: 'Otro' },
 ];
+
+/**
+ * Equipos habituales que se muestran al entrar, siguiendo el selector compacto
+ * de la maqueta V4. El catálogo completo sigue disponible con «Ver todos».
+ * Son nombres del catálogo real: aquí no se crean plantillas ni valores nuevos.
+ */
+const FEATURED_APPLIANCE_NAMES = [
+  'Nevera',
+  'Ventilador',
+  'Bombillas LED',
+  'Televisión',
+  'Carga de teléfonos móviles',
+  'Router',
+  'Arrocera',
+  'Congelador',
+  'Split inverter',
+];
+
+const FEATURED_TEMPLATES = FEATURED_APPLIANCE_NAMES
+  .map((name) => APPLIANCE_TEMPLATES.find((template) => template.name === name))
+  .filter((template): template is ApplianceTemplate => Boolean(template));
 
 function ApplianceEditor({ appliance, params, onChange, onRemove }: { appliance: Appliance; params: DesignParams; onChange: (patch: Partial<Appliance>) => void; onRemove: () => void }) {
   const [showAdvanced, setShowAdvanced] = useState(false);
@@ -96,14 +117,20 @@ export function StepAppliances({
   onChange: (appliances: Appliance[] | ((current: Appliance[]) => Appliance[])) => void;
   onNext: () => void;
 }) {
-  const [category, setCategory] = useState<string>('Todos');
+  const [showAll, setShowAll] = useState(false);
   const [expanded, setExpanded] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [manual, setManual] = useState({ name: '', powerW: 600, hoursPerDay: 4, schedule: 'day' as Schedule, priority: 'important' as Priority });
   const hasMobileCharging = appliances.some((appliance) => appliance.name === 'Carga de teléfonos móviles');
-  const templates = category === 'Todos'
+
+  const selectedTemplateNames = new Set(appliances.filter((appliance) => !appliance.custom).map((appliance) => appliance.name));
+  const selectedExtraTemplates = APPLIANCE_TEMPLATES.filter(
+    (template) => !FEATURED_APPLIANCE_NAMES.includes(template.name) && selectedTemplateNames.has(template.name),
+  );
+  const visibleTemplates = showAll
     ? APPLIANCE_TEMPLATES
-    : APPLIANCE_TEMPLATES.filter((t) => t.category === category);
+    : [...FEATURED_TEMPLATES, ...selectedExtraTemplates];
+  const hiddenUnselectedCount = APPLIANCE_TEMPLATES.length - FEATURED_TEMPLATES.length - selectedExtraTemplates.length;
 
   // Delegamos la transformación funcional al padre para que React la aplique
   // sobre el estado más reciente, incluso ante varios cambios rápidos.
@@ -120,10 +147,10 @@ export function StepAppliances({
       if (found) return current.filter((a) => a.id !== found.id);
       return [...current, created];
     });
-    // Antes se fijaba `expanded` al equipo nuevo TAMBIÉN al desmarcarlo, y el
-    // id quedaba apuntando a un equipo que ya no existe.
+    // La selección no abre automáticamente el editor: primero se eligen los
+    // equipos; los detalles quedan disponibles en «Tus equipos».
     if (existing) setExpanded((current) => (current === existing.id ? null : current));
-    else setExpanded(created.id);
+    else setExpanded(null);
   }
 
   function update(id: string, value: Partial<Appliance>) {
@@ -161,23 +188,17 @@ export function StepAppliances({
       <div className="section-title">
         <span className="eyebrow">Tu consumo</span>
         <h2>¿Qué equipos tienes en casa?</h2>
-        <p>Elige los que más usas. Después puedes cambiar la potencia, las horas y la prioridad de cada uno.</p>
+        <p>Selecciona los equipos que hay en tu vivienda. Luego podrás ajustar la cantidad, el consumo y el horario de cada uno.</p>
       </div>
 
-      <Panel tone="paper">
-        <Note level="info" title="Carga de teléfonos móviles">
-          {hasMobileCharging
-            ? 'Esta vivienda ya incluye una estimación para dos móviles: 10 W por teléfono durante 2 horas al día. Puedes cambiar la cantidad, la potencia y el horario.'
-            : 'Añade la carga de móviles desde «Comunicaciones». La plantilla estima 10 W por teléfono durante 2 horas al día; puedes modificarla o quitarla.'}
-        </Note>
-        <div className="cat-tabs" role="group" aria-label="Categorías de electrodomésticos">
-          {['Todos', ...CATEGORIES].map((item) => (
-            <Chip key={item} active={category === item} onClick={() => setCategory(item)}>{item}</Chip>
-          ))}
+      <Panel tone="paper" className="appliance-picker">
+        <div className="panel__head appliance-picker__head">
+          <h3>Equipos habituales</h3>
+          <Badge tone="storage">{appliances.length} seleccionados</Badge>
         </div>
         <div className="appliance-grid">
-          {templates.map((template) => {
-            const selected = appliances.some((a) => a.name === template.name && !a.custom);
+          {visibleTemplates.map((template) => {
+            const selected = selectedTemplateNames.has(template.name);
             return (
               <button
                 type="button"
@@ -186,21 +207,36 @@ export function StepAppliances({
                 aria-pressed={selected}
                 onClick={() => toggleTemplate(template)}
               >
-                <span className="app-tile__icon"><Icon name={template.icon as IconName} size={21} /></span>
+                <span className="app-tile__icon"><Icon name={template.icon as IconName} size={23} /></span>
                 <span className="app-tile__name">{template.name}</span>
-                <span className="app-tile__power">{template.powerW} W · {template.hoursPerDay} h</span>
+                <span className="app-tile__power">{fmtW(template.powerW)} · {template.hoursPerDay} h/día</span>
                 <span className="app-tile__check">{selected && <Icon name="check" size={15} />}</span>
               </button>
             );
           })}
         </div>
-        <div style={{ marginTop: '1rem' }}>
+
+        {hiddenUnselectedCount > 0 || showAll ? (
+          <div className="appliance-picker__more">
+            <Button variant="quiet" full icon={showAll ? 'minus' : 'plus'} onClick={() => setShowAll(!showAll)}>
+              {showAll ? 'Mostrar menos equipos' : `Ver todos los equipos (${hiddenUnselectedCount} más)`}
+            </Button>
+          </div>
+        ) : null}
+
+        <p className="appliance-picker__hint">
+          {hasMobileCharging
+            ? 'La carga de teléfonos ya está incluida en esta vivienda. Puedes cambiar la cantidad o quitarla en «Tus equipos».'
+            : 'La carga de teléfonos también está disponible en el catálogo de equipos adicionales.'}
+        </p>
+
+        <div className="appliance-picker__custom">
           <Button variant="quiet" full icon={adding ? 'close' : 'plus'} onClick={() => setAdding(!adding)}>
             {adding ? 'Cerrar formulario' : 'Añadir un equipo que no aparece'}
           </Button>
         </div>
         {adding && (
-          <div style={{ marginTop: '1rem' }}>
+          <div className="appliance-picker__form">
             <Field label="Nombre del equipo" htmlFor="manual-name">
               <input id="manual-name" value={manual.name} placeholder="Ej.: plancha, taladro, bomba…" onChange={(e) => setManual({ ...manual, name: e.target.value })} />
             </Field>
@@ -248,7 +284,10 @@ export function StepAppliances({
                   appliance={appliance}
                   params={params}
                   onChange={(value) => update(appliance.id, value)}
-                  onRemove={() => patch((current) => current.filter((a) => a.id !== appliance.id))}
+                  onRemove={() => {
+                    patch((current) => current.filter((a) => a.id !== appliance.id));
+                    setExpanded(null);
+                  }}
                 />
               )}
             </div>
