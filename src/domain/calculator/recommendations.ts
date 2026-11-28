@@ -273,6 +273,271 @@ function sortCandidates(candidates: RecommendationCandidate[]): RecommendationCa
   });
 }
 
+function findTierRecommendation(
+  input: CandidateSearchInput,
+  options: RecommendationGenerationOptions,
+  arrayCheckCache: Map<string, BalancedArrayConfigurationCheck>,
+): SolarRecommendation | null {
+  const { household, tier, scenarioHousehold, params, energy, sizingEnergy } = input;
+  if (!hasDeclaredLoad(scenarioHousehold)) return null;
+
+  const requiredContinuousW = energy.peakSimultaneousW * tier.inverterMargin;
+  const requiredPeakW = peakDesignW(energy);
+  const nightEnergyKwh = Math.max(0, sizingEnergy.nightKwh);
+
+  const panels = input.panels
+    .filter((panel) => panel.powerW > 0)
+    .sort((a, b) => b.powerW - a.powerW);
+  const batteries = input.batteries
+    .filter((battery) => battery.nominalKwh > 0 && battery.nominalV > 0)
+    .sort((a, b) => a.nominalKwh - b.nominalKwh);
+  const inverters = input.inverters
+    .filter((inverter) => inverter.ratedW > 0 && inverter.maxPvInputW > 0)
+    .sort((a, b) => a.ratedW - b.ratedW);
+
+  // FASE 1A: filtrar modelos y cantidades de baterías por la capacidad nocturna.
+  const batteryOptions = batteries.flatMap((battery) => {
+    const targetBatteryKwh = requiredBatteryNominalKwh(sizingEnergy, params, battery) * tier.batteryMargin;
+    const targetPvW = requiredPvWatts(sizingEnergy, params, battery);
+    const choices: Array<{
+      battery: BatterySpec;
+      batteryCount: number;
+      targetBatteryKwh: number;
+      targetPvW: number;
+    }> = [];
+    for (let batteryCount = 1; batteryCount <= MAX_BATTERY_COUNT; batteryCount += 1) {
+      const bankKwh = battery.nominalKwh * batteryCount;
+      if (!batteryBankFitsNightEnergy(nightEnergyKwh, bankKwh)) continue;
+      if (nightEnergyKwh <= 0 && batteryCount > 1) continue;
+      choices.push({ battery, batteryCount, targetBatteryKwh, targetPvW });
+    }
+    return choices;
+  });
+  if (!batteryOptions.length) return null;
+
+  // FASE 1B: saltar cantidades de inversores que no pueden alcanzar ni los
+  // mínimos de potencia, arranque, entrada PV o corriente de descarga.
+  const candidates: RecommendationCandidate[] = [];
+  options.onProgress?.({
+    tierId: tier.id,
+    phase: 'generating',
+    candidatesGenerated: 0,
+    candidatesValidated: 0,
+    scenariosEvaluated: 0,
+  });
+
+  for (const batteryOption of batteryOptions) {
+    const { battery, batteryCount, targetBatteryKwh, targetPvW } = batteryOption;
+    for (const inverter of inverters) {
+      const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
+      const minUnits = minimumParallelUnitsForCandidate({
+        inverter,
+        battery,
+        targetPvW,
+        requiredContinuousW,
+        requiredPeakW,
+        params,
+      });
+      if (minUnits > maxUnits) continue;
+
+      for (let inverterCount = minUnits; inverterCount <= maxUnits; inverterCount += 1) {
+        const effective = inverterWithParallelUnits(inverter, inverterCount);
+        const voltageDifference = Math.abs(battery.nominalV - effective.batteryVoltageV);
+        if (
+          effective.batteryVoltageV > 0 &&
+          voltageDifference > 5 &&
+          voltageDifference / effective.batteryVoltageV > 0.12
+        ) continue;
+
+        for (const panel of panels) {
+          const desiredPanelCount = Math.max(1, Math.ceil(targetPvW / panel.powerW));
+          const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(effective.maxPvInputW / panel.powerW));
+          if (desiredPanelCount > maxPanels) continue;
+
+          // Añadir paneles sólo cuando la primera cantidad deseada no forma
+          // strings válidos; conservar el menor campo FV técnicamente posible.
+          for (let panelCount = desiredPanelCount; panelCount <= maxPanels; panelCount += 1) {
+            const cacheKey = `${inverter.id}:${inverterCount}:${panel.id}:${panelCount}`;
+            let arrayCheck = arrayCheckCache.get(cacheKey);
+            if (!arrayCheck) {
+              arrayCheck = checkBalancedArrayConfiguration(panel, effective, panelCount, params);
+              arrayCheckCache.set(cacheKey, arrayCheck);
+            }
+            const technical = checkInverterCompatibility({
+              inverter: effective,
+              battery,
+              panel,
+              panelCount,
+              batteryCount,
+              arrayCheck,
+              continuousW: requiredContinuousW,
+              peakW: requiredPeakW,
+              voltage: household.voltage,
+              params,
+            });
+
+            if (!technical.compatible) {
+              const errors = technical.diagnostics.filter((item) => item.level === 'error');
+              // Un problema MPPT puede cambiar al variar la cantidad de paneles.
+              // Potencia, tensión o descarga insuficientes no se arreglan así.
+              if (errors.length > 0 && errors.every((item) => item.code === 'MPPT')) continue;
+              break;
+            }
+            if (technical.status === 'incompatible') break;
+
+            candidates.push({
+              panel,
+              panelCount,
+              battery,
+              batteryCount,
+              inverter,
+              inverterCount,
+              targetBatteryKwh,
+              targetPvW,
+              requiredPeakW,
+              technicalStatus: technical.status,
+            });
+            if (candidates.length % 8 === 0) {
+              options.onProgress?.({
+                tierId: tier.id,
+                phase: 'generating',
+                candidatesGenerated: candidates.length,
+                candidatesValidated: 0,
+                scenariosEvaluated: 0,
+              });
+            }
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // FASE 2: ordenar por capacidad y probar primero el banco más pequeño.
+  // No se eliminan automáticamente bancos mayores del mismo modelo: una
+  // corriente de carga AC adicional puede ser decisiva para la sostenibilidad.
+  let candidatesValidated = 0;
+  let scenariosEvaluated = 0;
+  options.onProgress?.({
+    tierId: tier.id,
+    phase: 'validating',
+    candidatesGenerated: candidates.length,
+    candidatesValidated,
+    scenariosEvaluated,
+  });
+
+  for (const candidate of sortCandidates(candidates)) {
+    candidatesValidated += 1;
+    const {
+      panel,
+      panelCount,
+      battery,
+      batteryCount,
+      inverter,
+      inverterCount,
+      targetBatteryKwh,
+      targetPvW,
+      requiredPeakW,
+      technicalStatus,
+    } = candidate;
+    const system: SystemConfiguration = {
+      id: 'recommendation-preview',
+      householdProfileId: household.id,
+      recommendationTier: tier.id,
+      name: 'Comprobación automática',
+      panelId: panel.id,
+      panelCount,
+      batteryId: battery.id,
+      batteryCount,
+      inverterId: inverter.id,
+      inverterCount,
+      installationType: 'hybrid',
+      params,
+      origin: 'user',
+      createdAt: new Date(0).toISOString(),
+      updatedAt: new Date(0).toISOString(),
+    };
+
+    const usual = evaluateCompatibleSystemBehavior({
+      household: scenarioHousehold,
+      system,
+      panel,
+      battery,
+      inverter,
+    }, 'usual', () => {
+      scenariosEvaluated += 1;
+      options.onProgress?.({
+        tierId: tier.id,
+        phase: 'validating',
+        candidatesGenerated: candidates.length,
+        candidatesValidated,
+        scenariosEvaluated,
+      });
+    });
+    if (!usual) continue;
+
+    const warnings: string[] = [];
+    if (technicalStatus === 'partial') {
+      warnings.push('La simulación energética cumple, pero faltan datos de ficha para verificar completamente la conexión eléctrica. Confirma estos parámetros antes de comprar.');
+    }
+    if (panel.isReference || battery.isReference || inverter.isReference) {
+      warnings.push('La combinación incluye al menos un equipo de referencia. Sustituye sus datos por los de la ficha técnica del modelo que vayas a comprar.');
+    }
+    if (inverterCount > 1) {
+      warnings.push(`La propuesta utiliza ${inverterCount} inversores idénticos en paralelo. Requiere el kit/cableado de comunicación, banco común de baterías y distribución fotovoltaica independiente por inversor según el manual del fabricante.`);
+    }
+    if (usual.scenarios.some((scenario) => scenario.cookingMealsSubstituted > 0)) {
+      warnings.push('La evaluación usual utiliza el combustible alternativo declarado para algunas comidas, tal como está configurado en el perfil de vivienda.');
+    }
+    const price = optionPrice(panel, panelCount, battery, batteryCount, inverter, inverterCount);
+    options.onProgress?.({
+      tierId: tier.id,
+      phase: 'complete',
+      candidatesGenerated: candidates.length,
+      candidatesValidated,
+      scenariosEvaluated,
+    });
+    return {
+      tier: tier.id,
+      label: tier.label,
+      description: tier.description,
+      panel,
+      panelCount,
+      battery,
+      batteryCount,
+      inverter,
+      inverterCount,
+      installedPvW: panelCount * panel.powerW,
+      installedBatteryKwh: batteryCount * battery.nominalKwh,
+      targetBatteryKwh,
+      targetPvW,
+      requiredPeakW,
+      simulatedDemandKwh: sizingEnergy.dailyKwh,
+      simulatedPvKwh: usual.pvKwhMedian,
+      initialSoc: usual.initialSoc,
+      finalSocWorst: Math.min(...usual.scenarios.map((scenario) => scenario.finalSoc), 1),
+      coverageWorst: usual.coverageWorst,
+      energySustainable: usual.energySustainable,
+      cookingMealsUnmetWorst: usual.cookingMealsUnmetWorst,
+      blackoutCoverage: usual.blackout.coverage,
+      blackoutUnservedKwh: usual.blackout.unservedKwh,
+      unservedKwh: usual.unservedKwhWorst,
+      technicalStatus,
+      warnings,
+      ...price,
+    };
+  }
+
+  options.onProgress?.({
+    tierId: tier.id,
+    phase: 'complete',
+    candidatesGenerated: candidates.length,
+    candidatesValidated,
+    scenariosEvaluated,
+  });
+  return null;
+}
+
 /**
  * Búsqueda en dos fases:
  * 1) genera y filtra candidatos mediante límites físicos y comprobaciones
