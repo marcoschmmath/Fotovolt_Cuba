@@ -18,6 +18,7 @@ import type { HouseholdProfile } from '../household/types';
 import { effectivePriority, isNightEssential } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
 import { batteryPack } from '../calculator/battery';
+import { inverterWithParallelUnits } from '../calculator/inverter';
 import { buildDailyDemand } from '../calculator/energy';
 
 export interface Catalog {
@@ -74,7 +75,7 @@ export function buildEnergySystemConfig(input: BridgeInput): EnergySystemConfig 
     panelCount: Math.max(0, input.system.panelCount),
     battery: input.battery,
     batteryCount: Math.max(0, input.system.batteryCount),
-    inverter: input.inverter,
+    inverter: inverterWithParallelUnits(input.inverter, input.system.inverterCount ?? 1),
     appliances: householdAppliances(input.household),
     grid,
     solar: solarFromParams(input.system.params),
