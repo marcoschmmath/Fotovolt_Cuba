@@ -598,6 +598,12 @@ function findTierRecommendation(
     candidatesGenerated: candidates.length,
     candidatesValidated,
     scenariosEvaluated,
+    technicalChecks,
+    technicalRejections,
+    parallelUnitsSkipped,
+    candidateGenerationMs,
+    validationMs: Date.now() - validationStartedAt,
+    elapsedMs: Date.now() - tierStartedAt,
   });
   return null;
 }
@@ -605,10 +611,10 @@ function findTierRecommendation(
 /**
  * Búsqueda en dos fases:
  * 1) genera y filtra candidatos mediante límites físicos y comprobaciones
- *    técnicas baratas; conserva el menor campo PV de cada combinación.
- * 2) ordena por exceso de capacidad y simula candidatos en ese orden. Sólo
- *    se simula el comportamiento habitual (25 escenarios), y se detiene en
- *    la primera combinación que cumple exactamente el criterio de Result.tsx.
+ *    técnicas baratas; conserva el menor campo PV de cada combinación y
+ *    omite cantidades paralelas por debajo de una cota inferior demostrable.
+ * 2) ordena por exceso de capacidad, rechaza en el primer escenario que falle
+ *    y calcula el apagón total sólo para una candidata que supera los 24 horarios.
  */
 
 export function generateSolarRecommendations(
