@@ -298,12 +298,35 @@ describe('persistencia (esquema v4: hogares e instalaciones sin configuración c
       ],
       acVoltages: [110, 220],
       gridChargerW: 2000,
+      maxParallelUnits: 6,
     };
     storage.setItem(KEY_V3, JSON.stringify({ version: 3, households: [], installations: [], inverters: [inverter] }));
     const restored = loadState().inverters.find((i) => i.id === 'inv-multi');
     expect(restored?.mppt).toHaveLength(2);
     expect(restored?.acVoltages).toEqual([110, 220]);
     expect(restored?.gridChargerW).toBe(2000);
+    expect(restored?.maxParallelUnits).toBe(6);
+  });
+
+
+  it('conserva y limita la cantidad de inversores paralelos de una instalación', () => {
+    const state = createInitialState();
+    state.households = [{
+      id: 'parallel-home', name: 'Casa paralela', appliances: [],
+      cooking: { enabled: false, fuelKind: null, fuelConfirmed: false, substitution: 'electric-first', allowFlexibleTiming: true },
+      activities: [], night: { essentialIds: [] }, voltage: 220,
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }];
+    state.inverters[0] = { ...state.inverters[0], maxParallelUnits: 4 };
+    state.installations = [{
+      id: 'parallel-installation', householdProfileId: 'parallel-home', name: 'Dos inversores',
+      panelId: state.panels[0].id, panelCount: 4, batteryId: state.batteries[0].id, batteryCount: 2,
+      inverterId: state.inverters[0].id, inverterCount: 3, installationType: 'hybrid',
+      params: { ...DEFAULT_PARAMS }, origin: 'user',
+      createdAt: '2026-01-01T00:00:00.000Z', updatedAt: '2026-01-01T00:00:00.000Z',
+    }];
+    saveState(state);
+    expect(loadState().installations[0].inverterCount).toBe(3);
   });
 
   it('elimina la capacidad de exportación de los datos antiguos', () => {
