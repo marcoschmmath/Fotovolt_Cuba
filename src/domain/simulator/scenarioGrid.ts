@@ -174,6 +174,7 @@ interface BehaviorEvaluationOptions {
   /** Rechazar en cuanto un escenario viola una de las condiciones de aceptación. */
   rejectIncompatibleEarly?: boolean;
   onScenarioEvaluated?: (scenario: GridReturnScenario) => void;
+  onScenarioRejected?: (scenario: GridReturnScenario, reasons: string[]) => void;
 }
 
 function scenarioPassesRecommendationCriteria(
@@ -236,6 +237,13 @@ function evaluateBehavior(
     outcomes.push(outcome);
     options.onScenarioEvaluated?.(scenario);
     if (options.rejectIncompatibleEarly && !scenarioPassesRecommendationCriteria(outcome, initialSoc)) {
+      const reasons: string[] = [];
+      if (outcome.coverage < 0.999) reasons.push(`cobertura ${(outcome.coverage * 100).toFixed(2)} % (< 99,9 %)`);
+      if (outcome.finalSoc < initialSoc - 0.005) {
+        reasons.push(`SOC final ${(outcome.finalSoc * 100).toFixed(2)} % por debajo del umbral ${((initialSoc - 0.005) * 100).toFixed(2)} %`);
+      }
+      if (outcome.cookingMealsUnmet > 0) reasons.push(`${outcome.cookingMealsUnmet} comida(s) eléctricas sin atender`);
+      options.onScenarioRejected?.(scenario, reasons);
       return null;
     }
   }
@@ -266,6 +274,7 @@ export function evaluateCompatibleSystemBehavior(
   input: EvaluationInput,
   mode: CookingMode = 'usual',
   onScenarioEvaluated?: (scenario: GridReturnScenario) => void,
+  onScenarioRejected?: (scenario: GridReturnScenario, reasons: string[]) => void,
 ): BehaviorOutcome | null {
   return evaluateBehavior(input, mode, {
     // Until compact-vs-detailed equivalence is stress-tested with cooking and
@@ -273,6 +282,7 @@ export function evaluateCompatibleSystemBehavior(
     collectIntervals: true,
     rejectIncompatibleEarly: true,
     onScenarioEvaluated,
+    onScenarioRejected,
   });
 }
 
