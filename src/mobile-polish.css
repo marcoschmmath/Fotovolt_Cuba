@@ -1,0 +1,226 @@
+/* Refinamientos de interfaz para pantallas pequeñas.
+   Se mantiene la dirección visual existente y se corrigen jerarquía y espacio. */
+
+.app__body,
+.stack,
+.panel,
+.panel__head,
+.result-tab-panel,
+.result-overview__headline {
+  min-width: 0;
+}
+
+.panel__head {
+  flex-wrap: wrap;
+}
+
+.panel__head > * {
+  min-width: 0;
+}
+
+/* Portada: mantener la imagen de marca sin desplazar las acciones demasiado abajo. */
+.home-hero__art {
+  margin: -1rem -0.75rem -0.25rem;
+}
+
+.home-hero__art img {
+  max-height: 13rem;
+}
+
+.home-hero h1 {
+  max-width: 12ch;
+  font-size: clamp(2.35rem, 9vw, 3.15rem);
+}
+
+.home-action-card {
+  min-width: 0;
+}
+
+.home-action-card--primary {
+  border-color: var(--forest-800);
+  background: var(--forest-800);
+  color: #fffefa;
+  box-shadow: 0 5px 16px rgba(12, 46, 35, .12);
+}
+
+.home-action-card--primary > svg {
+  color: #fffefa;
+}
+
+.home-action-card--primary .home-action-card__icon {
+  background: rgba(255, 255, 255, .12);
+  color: var(--lime);
+}
+
+.home-action-card--primary .home-action-card__copy small {
+  color: #dce9df;
+}
+
+.home-action-card--primary:focus-visible {
+  outline-color: var(--lime-ink);
+}
+
+/* La explicación sigue disponible, pero no ocupa espacio antes de los proyectos. */
+.home-how {
+  margin: 0 0 1.1rem;
+  padding: .75rem .9rem;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: rgba(255, 254, 250, .72);
+}
+
+.home-how > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .75rem;
+  min-height: 2.2rem;
+  color: var(--forest-800);
+  font-size: .88rem;
+  font-weight: 650;
+  cursor: pointer;
+  list-style: none;
+}
+
+.home-how > summary::-webkit-details-marker {
+  display: none;
+}
+
+.home-how > summary svg {
+  flex: 0 0 auto;
+  transition: transform 160ms ease;
+}
+
+.home-how[open] > summary {
+  padding-bottom: .55rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.home-how[open] > summary svg {
+  transform: rotate(90deg);
+}
+
+.home-how .home-flow {
+  margin: .55rem 0 0;
+}
+
+/* Los resultados son lo primero que debe poder leerse de un vistazo. */
+@media (max-width: 639px) {
+  .result-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: .65rem .45rem;
+  }
+
+  .result-metrics .stat {
+    min-width: 0;
+    padding: 0 .2rem;
+    border-right: 0;
+    text-align: center;
+  }
+
+  .result-metrics .stat:last-child {
+    grid-column: 1 / -1;
+    padding-top: .65rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .result-metrics .stat strong {
+    font-size: clamp(1.45rem, 6vw, 1.8rem);
+  }
+
+  .result-metrics .stat span {
+    font-size: .74rem;
+    line-height: 1.35;
+  }
+
+  .result-overview__headline {
+    grid-template-columns: 2.55rem minmax(0, 1fr);
+    gap: .6rem;
+  }
+
+  .result-overview__check {
+    width: 2.45rem;
+    height: 2.45rem;
+  }
+
+  .result-overview__headline p {
+    font-size: .82rem;
+  }
+
+  .wizard-actions .btn {
+    min-width: 0;
+    white-space: normal;
+    line-height: 1.2;
+  }
+
+  .panel__head {
+    align-items: flex-start;
+  }
+
+  .simulation-panel__head {
+    flex-wrap: wrap;
+  }
+
+  .simulation-panel__head > * {
+    min-width: 0;
+  }
+
+  .home-proof {
+    margin-bottom: .8rem;
+  }
+}
+
+@media (max-width: 380px) {
+  .home-hero h1 {
+    font-size: 2.3rem;
+  }
+
+  .home-hero__art img {
+    max-height: 10.5rem;
+  }
+
+  .home-action-card {
+    grid-template-columns: 2.65rem minmax(0, 1fr) 1rem;
+    gap: .55rem;
+    min-height: 4.5rem;
+    padding: .65rem .7rem;
+  }
+
+  .home-action-card__icon {
+    width: 2.65rem;
+    height: 2.65rem;
+  }
+
+  .home-action-card__copy strong {
+    font-size: .88rem;
+  }
+
+  .home-action-card__copy small {
+    font-size: .72rem;
+  }
+
+  .wizard-actions {
+    display: flex;
+    flex-direction: column-reverse;
+  }
+
+  .wizard-actions .btn {
+    width: 100%;
+  }
+
+  .meal__summary {
+    min-width: 0;
+  }
+}
+
+@media (min-width: 640px) {
+  .home-hero__art img {
+    max-height: 24rem;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-how > summary svg {
+    transition: none;
+  }
+}
