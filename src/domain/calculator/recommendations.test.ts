@@ -121,7 +121,7 @@ describe('generateSolarRecommendations', () => {
     // Diagnóstico exhaustivo temporal: identifica para cada tamaño de array
     // los escenarios que no alcanzan el 99,9 % y si el déficit afecta a SOC.
     const moderateHousehold = householdForRecommendation(source, 'moderate');
-    const debugPanelCounts = [4, 5, 6, 7, 8, 10, 12, 14];
+    const debugPanelCounts = [14, 16, 18, 20, 21];
     const simulationDiagnostics = debugPanelCounts.map((panelCount) => {
       const debugSystem: SystemConfiguration = {
         id: `debug-${panelCount}`,
