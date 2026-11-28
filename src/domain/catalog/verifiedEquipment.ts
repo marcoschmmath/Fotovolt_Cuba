@@ -75,8 +75,9 @@ export const VERIFIED_INVERTERS: InverterSpec[] = [
     batteryVoltageV: 48,
     maxChargeA: 120,
     maxDischargeA: 120,
+    maxParallelUnits: 16,
     acVoltages: [220],
-    sourceUrl: 'https://www.deyeinverter.com/deyeinverter/2021/04/14/%E3%80%90b%E3%80%91hybridinvertersun-3.6-5k-sg0103lp1-eu.pdf',
+    sourceUrl: 'https://www.deyeinverter.com/deyeinverter/2021/06/30/%E3%80%90b%E3%80%91hybridinvertersun-3.6-5k-sg0103lp1-eu.pdf',
     note: 'Ficha confirmada. Potencia por MPPT estimada como reparto entre 2 MPPT; verificar. Versiones de manual difieren en corriente PV (11 A vs 13 A).',
   },
   {
@@ -120,7 +121,7 @@ export const VERIFIED_INVERTERS: InverterSpec[] = [
     maxDischargeA: 190,
     maxParallelUnits: 6,
     acVoltages: [220],
-    sourceUrl: 'https://nastechsolar.com/content/INVERTERS/SOLIS/PRODUCT%20DATASHEET/ENERGY%20STORAGE%20INVERTER/S6-EH1P(3-8)K-L-PLUS/Datasheet%20Solis%20S6-EH1P(3-8)K-L-PLUS.pdf',
+    sourceUrl: 'https://www.solisinverters.com/global/energy_storage_inverters19/S6-EH1P%283-8%29K-L-PLUS_gl',
     note: 'Ficha del modelo single-phase. En tiendas que sirven a Cuba aparece el SKU split-phase S6-EH2P8K02-SV-YD-L: verificar ficha exacta antes de comprar.',
   },
   {
@@ -139,7 +140,7 @@ export const VERIFIED_INVERTERS: InverterSpec[] = [
     maxDischargeA: 100,
     maxParallelUnits: 6,
     acVoltages: [220],
-    sourceUrl: 'https://growatt.tech/wp-content/uploads/2023/02/SPF-3000_5000-ES-Datasheet.pdf',
+    sourceUrl: 'https://fr.growatt.com/upload/file/20220811/da820612adc14a51f5de19b61f7a70b1.pdf',
     note: 'Descarga 100 A estimada de la potencia, no publicada. Revisar corriente PV del modelo exacto (18 A o 22 A según revisión).',
   },
 ];
