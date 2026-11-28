@@ -17,6 +17,28 @@ export interface InverterCheck {
   diagnostics: Diagnostic[];
 }
 
+/**
+ * Devuelve la capacidad equivalente de varias unidades idénticas conectadas
+ * en paralelo. La tensión máxima PV y las ventanas de cada MPPT no se suman:
+ * se replican los MPPT por unidad; las potencias y corrientes sí se agregan.
+ * La cantidad se limita a lo declarado en la ficha del modelo.
+ */
+export function inverterWithParallelUnits(inverter: InverterSpec, requestedUnits = 1): InverterSpec {
+  const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
+  const units = Math.max(1, Math.min(maxUnits, Math.floor(requestedUnits)));
+  if (units === 1) return inverter;
+  return {
+    ...inverter,
+    ratedW: inverter.ratedW * units,
+    surgeW: inverter.surgeW * units,
+    maxPvInputW: inverter.maxPvInputW * units,
+    maxChargeA: inverter.maxChargeA * units,
+    maxDischargeA: inverter.maxDischargeA * units,
+    ...(inverter.gridChargerW !== undefined ? { gridChargerW: inverter.gridChargerW * units } : {}),
+    mppt: Array.from({ length: units }, () => inverter.mppt.map((item) => ({ ...item }))).flat(),
+  };
+}
+
 function add(
   list: Diagnostic[],
   level: Diagnostic['level'],
