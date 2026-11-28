@@ -112,7 +112,7 @@ export function SystemWizard({ navigate, installationId, initialHouseholdId }: {
   const pack = battery ? batteryPack(battery, draft.batteryCount, draft.params) : null;
   const bankKwh = pack?.nominalKwh ?? 0;
   const arrayCheck = panel && inverter && draft.panelCount > 0
-    ? checkBalancedArrayConfiguration(panel, inverter, draft.panelCount, draft.params)
+    ? checkBalancedArrayConfiguration(panel, inverterWithParallelUnits(inverter, draft.inverterCount ?? 1), draft.panelCount, draft.params)
     : null;
   const designHousehold = draft.recommendationTier
     ? householdForRecommendation(household, draft.recommendationTier)
