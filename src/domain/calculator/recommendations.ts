@@ -12,7 +12,7 @@ import { requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
 import { checkBalancedArrayConfiguration, type BalancedArrayConfigurationCheck } from './pv';
 import { checkInverterCompatibility, inverterWithParallelUnits } from './inverter';
-import { evaluateSystemBehavior } from '../simulator/scenarioGrid';
+import { evaluateCompatibleSystemBehavior } from '../simulator/scenarioGrid';
 
 export type { RecommendationTierId } from '../household/recommendationProfile';
 
@@ -97,6 +97,19 @@ export interface RecommendationInput {
   params: DesignParams;
 }
 
+export interface RecommendationProgress {
+  tierId: RecommendationTierId;
+  phase: 'preparing' | 'generating' | 'validating' | 'complete';
+  candidatesGenerated: number;
+  candidatesValidated: number;
+  scenariosEvaluated: number;
+}
+
+export interface RecommendationGenerationOptions {
+  onProgress?: (progress: RecommendationProgress) => void;
+  onTierComplete?: (card: RecommendationCard) => void;
+}
+
 interface CandidateSearchInput extends RecommendationInput {
   tier: RecommendationTier;
   scenarioHousehold: HouseholdProfile;
@@ -115,6 +128,31 @@ export function batteryBankFitsNightEnergy(nightKwh: number, bankKwh: number): b
   if (!(bankKwh > 0) || !Number.isFinite(bankKwh)) return false;
   if (!(nightKwh > 0)) return true;
   return 3 * bankKwh > nightKwh && bankKwh <= 2 * nightKwh;
+}
+
+/** Cota inferior exacta para restricciones que escalan linealmente al paralelizar. */
+export function minimumParallelUnitsForCandidate(options: {
+  inverter: InverterSpec;
+  battery: BatterySpec;
+  targetPvW: number;
+  requiredContinuousW: number;
+  requiredPeakW: number;
+  params: DesignParams;
+}): number {
+  const { inverter, battery, targetPvW, requiredContinuousW, requiredPeakW, params } = options;
+  const dischargeEfficiency = battery.dischargeEff > 0 ? battery.dischargeEff : params.batteryDischargeEff;
+  const inverterEfficiency = inverter.efficiency > 0 ? inverter.efficiency : params.inverterEfficiency;
+  const dcDischargeW = requiredPeakW / Math.max(0.1, dischargeEfficiency * inverterEfficiency);
+  const requiredDischargeA = battery.nominalV > 0 ? dcDischargeW / battery.nominalV : 0;
+  const bounds = [
+    Math.ceil((requiredContinuousW * 1.1) / inverter.ratedW),
+    inverter.surgeW > 0 ? Math.ceil(requiredPeakW / inverter.surgeW) : 1,
+    Math.ceil(targetPvW / inverter.maxPvInputW),
+    inverter.maxDischargeA > 0 && requiredDischargeA > 0
+      ? Math.ceil(requiredDischargeA / inverter.maxDischargeA)
+      : 1,
+  ];
+  return Math.max(1, ...bounds.filter(Number.isFinite));
 }
 
 function hasDeclaredLoad(household: HouseholdProfile): boolean {
@@ -237,7 +275,30 @@ function sortCandidates(candidates: RecommendationCandidate[]): RecommendationCa
  *    se simula el comportamiento habitual (25 escenarios), y se detiene en
  *    la primera combinación que cumple exactamente el criterio de Result.tsx.
  */
-function findTierRecommendation(input: CandidateSearchInput): SolarRecommendation | null {
+function pruneDominatedParallelCandidates(
+  candidates: RecommendationCandidate[],
+): RecommendationCandidate[] {
+  // Para el mismo modelo de panel, batería e inversor, con exactamente las
+  // mismas cantidades de paneles y baterías, más inversores sólo añade
+  // potencia sin cambiar la simulación: conservar el banco más pequeño es exacto.
+  const best = new Map<string, RecommendationCandidate>();
+  for (const candidate of candidates) {
+    const key = [
+      candidate.panel.id, candidate.panelCount,
+      candidate.battery.id, candidate.batteryCount,
+      candidate.inverter.id,
+    ].join('|');
+    const previous = best.get(key);
+    if (!previous || candidate.inverterCount < previous.inverterCount) best.set(key, candidate);
+  }
+  return [...best.values()];
+}
+
+function findTierRecommendation(
+  input: CandidateSearchInput,
+  options: RecommendationGenerationOptions,
+  arrayCheckCache: Map<string, BalancedArrayConfigurationCheck>,
+): SolarRecommendation | null {
   const { household, tier, scenarioHousehold, params, energy, sizingEnergy } = input;
   if (!hasDeclaredLoad(scenarioHousehold)) return null;
 
@@ -272,76 +333,61 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
   });
   if (!batteryOptions.length) return null;
 
-  // FASE 1B: crear las configuraciones posibles de inversores. La capacidad
-  // paralela sólo existe cuando el catálogo la declara expresamente.
-  const inverterOptions = inverters.flatMap((inverter) => {
-    const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
-    return Array.from({ length: maxUnits }, (_, index) => {
-      const inverterCount = index + 1;
-      return {
-        inverter,
-        inverterCount,
-        effective: inverterWithParallelUnits(inverter, inverterCount),
-      };
-    });
-  });
-
-  // FASE 1C: generación técnica. No se ejecuta todavía el simulador.
+  // FASE 1B/1C: se salta directamente al mínimo de unidades que puede
+  // satisfacer potencia, arranque, entrada PV y corriente de descarga.
   const candidates: RecommendationCandidate[] = [];
-  const arrayCheckCache = new Map<string, BalancedArrayConfigurationCheck>();
   for (const batteryOption of batteryOptions) {
     const { battery, batteryCount, targetBatteryKwh, targetPvW } = batteryOption;
-    for (const inverterOption of inverterOptions) {
-      const { inverter, inverterCount, effective } = inverterOption;
-      // La capacidad continua y de arranque crece con las unidades paralelas.
-      if (effective.ratedW < requiredContinuousW * 1.1) continue;
-      if (effective.surgeW > 0 && effective.surgeW < requiredPeakW) continue;
-      const voltageDifference = Math.abs(battery.nominalV - effective.batteryVoltageV);
-      if (effective.batteryVoltageV > 0 && voltageDifference > 5 &&
-          voltageDifference / effective.batteryVoltageV > 0.12) continue;
+    for (const inverter of inverters) {
+      const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
+      const minUnits = minimumParallelUnitsForCandidate({
+        inverter, battery, targetPvW, requiredContinuousW, requiredPeakW, params,
+      });
+      if (minUnits > maxUnits) continue;
 
-      for (const panel of panels) {
-        const desiredPanelCount = Math.max(1, Math.ceil(targetPvW / panel.powerW));
-        const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(effective.maxPvInputW / panel.powerW));
-        if (desiredPanelCount > maxPanels) continue;
+      for (let inverterCount = minUnits; inverterCount <= maxUnits; inverterCount += 1) {
+        const effective = inverterWithParallelUnits(inverter, inverterCount);
+        const voltageDifference = Math.abs(battery.nominalV - effective.batteryVoltageV);
+        if (effective.batteryVoltageV > 0 && voltageDifference > 5 &&
+            voltageDifference / effective.batteryVoltageV > 0.12) continue;
 
-        // El primer número técnicamente admisible es el menor campo solar
-        // para este conjunto de equipos; añadir paneles no mejora su tamaño.
-        for (let panelCount = desiredPanelCount; panelCount <= maxPanels; panelCount += 1) {
-          const cacheKey = `${inverter.id}:${inverterCount}:${panel.id}:${panelCount}`;
-          let arrayCheck = arrayCheckCache.get(cacheKey);
-          if (!arrayCheck) {
-            arrayCheck = checkBalancedArrayConfiguration(panel, effective, panelCount, params);
-            arrayCheckCache.set(cacheKey, arrayCheck);
-          }
-          const technical = checkInverterCompatibility({
-            inverter: effective,
-            battery,
-            panel,
-            panelCount,
-            batteryCount,
-            arrayCheck,
-            continuousW: requiredContinuousW,
-            peakW: requiredPeakW,
-            voltage: household.voltage,
-            params,
-          });
-          if (!technical.compatible) {
-            const errors = technical.diagnostics.filter((item) => item.level === 'error');
-            // MPPT depende del número entero de paneles; otros errores
-            // (potencia, tensión, descarga) no se arreglan añadiendo paneles.
-            if (errors.some((item) => item.code === 'MPPT') &&
-                errors.every((item) => item.code === 'MPPT')) continue;
+        for (const panel of panels) {
+          const desiredPanelCount = Math.max(1, Math.ceil(targetPvW / panel.powerW));
+          const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(effective.maxPvInputW / panel.powerW));
+          if (desiredPanelCount > maxPanels) continue;
+
+          for (let panelCount = desiredPanelCount; panelCount <= maxPanels; panelCount += 1) {
+            const cacheKey = `${inverter.id}:${inverterCount}:${panel.id}:${panelCount}`;
+            let arrayCheck = arrayCheckCache.get(cacheKey);
+            if (!arrayCheck) {
+              arrayCheck = checkBalancedArrayConfiguration(panel, effective, panelCount, params);
+              arrayCheckCache.set(cacheKey, arrayCheck);
+            }
+            const technical = checkInverterCompatibility({
+              inverter: effective,
+              battery,
+              panel,
+              panelCount,
+              batteryCount,
+              arrayCheck,
+              continuousW: requiredContinuousW,
+              peakW: requiredPeakW,
+              voltage: household.voltage,
+              params,
+            });
+            if (!technical.compatible) {
+              const errors = technical.diagnostics.filter((item) => item.level === 'error');
+              // Sólo un fallo MPPT puede corregirse probando otro número de paneles.
+              if (errors.length > 0 && errors.every((item) => item.code === 'MPPT')) continue;
+              break;
+            }
+            if (technical.status === 'incompatible') break;
+            candidates.push({
+              panel, panelCount, battery, batteryCount, inverter, inverterCount,
+              targetBatteryKwh, targetPvW, requiredPeakW, technicalStatus: technical.status,
+            });
             break;
           }
-          // TypeScript no deduce que compatible=true excluye status='incompatible'.
-          // Mantener la guarda explícita evita introducir candidatos incompatibles.
-          if (technical.status === 'incompatible') break;
-          candidates.push({
-            panel, panelCount, battery, batteryCount, inverter, inverterCount,
-            targetBatteryKwh, targetPvW, requiredPeakW, technicalStatus: technical.status,
-          });
-          break;
         }
       }
     }
@@ -350,7 +396,19 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
   // FASE 2: valida en orden de menor exceso de capacidad. La evaluación
   // oficial conserva 08:00, SOC inicial max(30 %, SOC mínimo), los 24 horarios
   // normales y el criterio exacto de compatibilidad. No calcula flexible.
-  for (const candidate of sortCandidates(candidates)) {
+  const validationCandidates = pruneDominatedParallelCandidates(candidates);
+  let candidatesValidated = 0;
+  let scenariosEvaluated = 0;
+  options.onProgress?.({
+    tierId: tier.id,
+    phase: 'validating',
+    candidatesGenerated: candidates.length,
+    candidatesValidated,
+    scenariosEvaluated,
+  });
+  for (const candidate of sortCandidates(validationCandidates)) {
+    candidatesValidated += 1;
+
     const {
       panel, panelCount, battery, batteryCount, inverter, inverterCount,
       targetBatteryKwh, targetPvW, requiredPeakW, technicalStatus,
@@ -372,14 +430,19 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
       createdAt: new Date(0).toISOString(),
       updatedAt: new Date(0).toISOString(),
     };
-    const usual = evaluateSystemBehavior({
+    const usual = evaluateCompatibleSystemBehavior({
       household: scenarioHousehold, system, panel, battery, inverter,
-    }, 'usual');
-    const energyCompatible =
-      usual.coverageWorst >= 0.999 &&
-      usual.energySustainable &&
-      usual.cookingMealsUnmetWorst === 0;
-    if (!energyCompatible) continue;
+    }, 'usual', () => {
+      scenariosEvaluated += 1;
+      options.onProgress?.({
+        tierId: tier.id,
+        phase: 'validating',
+        candidatesGenerated: candidates.length,
+        candidatesValidated,
+        scenariosEvaluated,
+      });
+    });
+    if (!usual) continue;
 
     const warnings: string[] = [];
     if (technicalStatus === 'partial') {
@@ -395,6 +458,13 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
       warnings.push('La evaluación usual utiliza el combustible alternativo declarado para algunas comidas, tal como está configurado en el perfil de vivienda.');
     }
     const price = optionPrice(panel, panelCount, battery, batteryCount, inverter, inverterCount);
+    options.onProgress?.({
+      tierId: tier.id,
+      phase: 'complete',
+      candidatesGenerated: candidates.length,
+      candidatesValidated,
+      scenariosEvaluated,
+    });
     return {
       tier: tier.id,
       label: tier.label,
@@ -425,11 +495,49 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
       ...price,
     };
   }
+  options.onProgress?.({
+    tierId: tier.id,
+    phase: 'complete',
+    candidatesGenerated: candidates.length,
+    candidatesValidated,
+    scenariosEvaluated,
+  });
   return null;
 }
 
-export function generateSolarRecommendations(input: RecommendationInput): RecommendationCard[] {
-  return RECOMMENDATION_TIERS.map((tier) => {
+function pruneDominatedParallelCandidates(
+  candidates: RecommendationCandidate[],
+): RecommendationCandidate[] {
+  // Para el mismo modelo de panel, batería e inversor, con exactamente las
+  // mismas cantidades de paneles y baterías, más inversores sólo añade
+  // potencia sin cambiar la simulación: conservar el banco más pequeño es exacto.
+  const best = new Map<string, RecommendationCandidate>();
+  for (const candidate of candidates) {
+    const key = [
+      candidate.panel.id, candidate.panelCount,
+      candidate.battery.id, candidate.batteryCount,
+      candidate.inverter.id,
+    ].join('|');
+    const previous = best.get(key);
+    if (!previous || candidate.inverterCount < previous.inverterCount) best.set(key, candidate);
+  }
+  return [...best.values()];
+}
+
+export function generateSolarRecommendations(
+  input: RecommendationInput,
+  options: RecommendationGenerationOptions = {},
+): RecommendationCard[] {
+  const arrayCheckCache = new Map<string, BalancedArrayConfigurationCheck>();
+  const cards: RecommendationCard[] = [];
+  for (const tier of RECOMMENDATION_TIERS) {
+    options.onProgress?.({
+      tierId: tier.id,
+      phase: 'preparing',
+      candidatesGenerated: 0,
+      candidatesValidated: 0,
+      scenariosEvaluated: 0,
+    });
     const scenarioHousehold = householdForRecommendation(input.household, tier.id);
     const energy = analyzeEnergy(scenarioHousehold.appliances, input.params);
     const sizing = addCookingToSizingEnergy(energy, scenarioHousehold, input.params);
@@ -439,7 +547,7 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
       scenarioHousehold,
       energy,
       sizingEnergy: sizing.energy,
-    });
+    }, options, arrayCheckCache);
 
     let reason: string | null = null;
     if (!hasDeclaredLoad(scenarioHousehold)) {
@@ -451,6 +559,9 @@ export function generateSolarRecommendations(input: RecommendationInput): Recomm
     } else if (!recommendation) {
       reason = 'No se encontró una combinación viable dentro de los límites residenciales: máximo 10 baterías y 50 paneles; el banco nominal debe ser mayor que un tercio de la energía nocturna y no superar el doble. Sólo se consideran unidades paralelas declaradas por el fabricante. Cada candidata debe alcanzar cobertura mínima del 99,9 %, SOC sostenible en los 24 escenarios y ninguna comida eléctrica sin atender.';
     }
-    return { tier, recommendation, reason };
-  });
+    const card = { tier, recommendation, reason };
+    cards.push(card);
+    options.onTierComplete?.(card);
+  }
+  return cards;
 }
