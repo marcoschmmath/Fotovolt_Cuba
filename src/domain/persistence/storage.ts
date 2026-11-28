@@ -182,6 +182,9 @@ function sanitizeInverter(value: unknown): InverterSpec {
     batteryVoltageV: Math.max(1, numIn(s.batteryVoltageV, d.batteryVoltageV, 1, 1000)),
     maxChargeA: Math.max(0, numIn(s.maxChargeA, d.maxChargeA, 0, 500)),
     maxDischargeA: Math.max(0, numIn(s.maxDischargeA, d.maxDischargeA, 0, 500)),
+    ...(typeof s.maxParallelUnits === 'number' && Number.isFinite(s.maxParallelUnits)
+      ? { maxParallelUnits: Math.max(1, Math.min(16, Math.round(s.maxParallelUnits))) }
+      : {}),
     mppt: mppt.length ? mppt : d.mppt.map((m) => ({ ...m })),
     acVoltages: acVoltages.length ? acVoltages : [...d.acVoltages],
   };
@@ -370,6 +373,10 @@ function sanitizeSystem(value: unknown, households: HouseholdProfile[], catalogs
     batteryId: pick(catalogs.batteries, value.batteryId, catalogs.batteries[0]).id,
     batteryCount: Math.round(numIn(value.batteryCount, 1, 0, 100)),
     inverterId: pick(catalogs.inverters, value.inverterId, catalogs.inverters[0]).id,
+    inverterCount: Math.max(1, Math.min(
+      pick(catalogs.inverters, value.inverterId, catalogs.inverters[0]).maxParallelUnits ?? 1,
+      Math.round(numIn(value.inverterCount, 1, 1, 16)),
+    )),
     installationType: value.installationType === 'offgrid' ? 'offgrid' : 'hybrid',
     params,
     ...(value.recommendationTier === 'essential' || value.recommendationTier === 'moderate' || value.recommendationTier === 'roomy'
