@@ -29,7 +29,7 @@ function RecommendationOption({
       <div className="stat-grid stat-grid--four">
         <Stat tone="solar" value={fmtW(recommendation.installedPvW)} label="Campo solar" sub={recommendation.panelCount + ' panel(es)'} />
         <Stat tone="storage" value={fmtKwh(recommendation.installedBatteryKwh)} label="Batería nominal" sub={recommendation.batteryCount + ' módulo(s)'} />
-        <Stat value={fmtW(recommendation.inverter.ratedW)} label="Potencia inversor" />
+        <Stat value={fmtW(recommendation.inverter.ratedW * recommendation.inverterCount)} label="Potencia inversor" sub={recommendation.inverterCount + ' unidad(es) en paralelo'} />
         <Stat tone="solar" value={(recommendation.coverageWorst * 100).toFixed(1) + ' %'} label="Peor cobertura" sub="24 escenarios normales" />
       </div>
       <p className="field__hint">
@@ -48,7 +48,7 @@ function RecommendationOption({
         </div>
         <div>
           <strong>Inversor</strong>
-          <p>{equipmentName(recommendation.inverter)} · banco {recommendation.battery.nominalV} V</p>
+          <p>{recommendation.inverterCount} × {equipmentName(recommendation.inverter)} · banco {recommendation.battery.nominalV} V</p>
         </div>
       </div>
 
@@ -117,6 +117,7 @@ export function Recommendations({
       batteryId: recommendation.battery.id,
       batteryCount: recommendation.batteryCount,
       inverterId: recommendation.inverter.id,
+      inverterCount: recommendation.inverterCount,
       installationType: 'hybrid',
       params: { ...params },
       recommendationTier: recommendation.tier,
