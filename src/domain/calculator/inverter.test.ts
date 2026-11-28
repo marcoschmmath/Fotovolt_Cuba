@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { checkInverterCompatibility, inverterWithParallelUnits, selectInverter } from './inverter';
 import { battery, inverter, panel, params } from '../../test/fixtures';
+import { VERIFIED_INVERTERS } from '../catalog/verifiedEquipment';
 
 const base = {
   inverter: inverter(),
