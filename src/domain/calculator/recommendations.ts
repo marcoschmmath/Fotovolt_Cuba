@@ -105,8 +105,16 @@ interface CandidateSearchInput extends RecommendationInput {
   sizingEnergy: EnergyBreakdown;
 }
 
-const MAX_PANEL_COUNT = 50;
-const MAX_BATTERY_COUNT = 10;
+export const RECOMMENDATION_LIMITS = { maxPanels: 50, maxBatteries: 10 } as const;
+const MAX_PANEL_COUNT = RECOMMENDATION_LIMITS.maxPanels;
+const MAX_BATTERY_COUNT = RECOMMENDATION_LIMITS.maxBatteries;
+
+/** Rango solicitado para la capacidad nominal total del banco nocturno. */
+export function batteryBankFitsNightEnergy(nightKwh: number, bankKwh: number): boolean {
+  if (!(bankKwh > 0) || !Number.isFinite(bankKwh)) return false;
+  if (!(nightKwh > 0)) return true;
+  return 3 * bankKwh > nightKwh && bankKwh <= 2 * nightKwh;
+}
 
 function hasDeclaredLoad(household: HouseholdProfile): boolean {
   return household.appliances.some((appliance) =>
@@ -255,7 +263,7 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
     const options: Array<{ battery: BatterySpec; batteryCount: number; targetBatteryKwh: number; targetPvW: number }> = [];
     for (let batteryCount = 1; batteryCount <= MAX_BATTERY_COUNT; batteryCount += 1) {
       const bankKwh = battery.nominalKwh * batteryCount;
-      if (nightEnergyKwh > 0 && !(3 * bankKwh > nightEnergyKwh && bankKwh <= 2 * nightEnergyKwh)) continue;
+      if (!batteryBankFitsNightEnergy(nightEnergyKwh, bankKwh)) continue;
       if (nightEnergyKwh <= 0 && batteryCount > 1) continue;
       options.push({ battery, batteryCount, targetBatteryKwh, targetPvW });
     }
