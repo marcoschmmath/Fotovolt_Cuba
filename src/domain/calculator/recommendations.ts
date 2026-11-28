@@ -105,7 +105,6 @@ export interface RecommendationProgress {
   scenariosEvaluated: number;
   technicalChecks?: number;
   technicalRejections?: number;
-  parallelUnitsSkipped?: number;
   candidateGenerationMs?: number;
   validationMs?: number;
   elapsedMs?: number;
@@ -268,7 +267,6 @@ function findTierRecommendation(
   let validationStartedAt = 0;
   let technicalChecks = 0;
   let technicalRejections = 0;
-  const parallelUnitsSkipped = 0;
   let candidatesValidated = 0;
   let scenariosEvaluated = 0;
 
@@ -313,7 +311,6 @@ function findTierRecommendation(
       scenariosEvaluated: 0,
       technicalChecks: 0,
       technicalRejections: 0,
-      parallelUnitsSkipped: 0,
       candidateGenerationMs: Date.now() - generationStartedAt,
       validationMs: 0,
       elapsedMs: Date.now() - tierStartedAt,
@@ -321,8 +318,8 @@ function findTierRecommendation(
     return null;
   }
 
-  // FASE 1B: saltar cantidades de inversores que no pueden alcanzar ni los
-  // mínimos de potencia, arranque, entrada PV o corriente de descarga.
+  // FASE 1B: explorar desde una unidad todas las cantidades permitidas por
+  // el fabricante; el chequeo eléctrico decide si cada banco es admisible.
   const candidates: RecommendationCandidate[] = [];
   options.onProgress?.({
     tierId: tier.id,
@@ -332,7 +329,6 @@ function findTierRecommendation(
     scenariosEvaluated: 0,
     technicalChecks,
     technicalRejections,
-    parallelUnitsSkipped,
     candidateGenerationMs: 0,
     validationMs: 0,
     elapsedMs: Date.now() - tierStartedAt,
@@ -342,9 +338,8 @@ function findTierRecommendation(
     const { battery, batteryCount, targetBatteryKwh, targetPvW } = batteryOption;
     for (const inverter of inverters) {
       const maxUnits = Math.max(1, Math.floor(inverter.maxParallelUnits ?? 1));
-      // Por seguridad, no saltar unidades basándose en cotas calculadas:
-      // el chequeo eléctrico real determina cuáles son admisibles.
-      // La ordenación posterior prueba las configuraciones menores primero.
+      // No se salta ninguna cantidad: el chequeo eléctrico real decide cuáles
+      // son admisibles; la ordenación posterior prioriza las de menor capacidad.
       for (let inverterCount = 1; inverterCount <= maxUnits; inverterCount += 1) {
         const effective = inverterWithParallelUnits(inverter, inverterCount);
         const voltageDifference = Math.abs(battery.nominalV - effective.batteryVoltageV);
@@ -413,7 +408,6 @@ function findTierRecommendation(
                 scenariosEvaluated: 0,
                 technicalChecks,
                 technicalRejections,
-                parallelUnitsSkipped,
                 candidateGenerationMs: Date.now() - generationStartedAt,
                 validationMs: 0,
                 elapsedMs: Date.now() - tierStartedAt,
@@ -439,7 +433,6 @@ function findTierRecommendation(
     scenariosEvaluated,
     technicalChecks,
     technicalRejections,
-    parallelUnitsSkipped,
     candidateGenerationMs,
     validationMs: 0,
     elapsedMs: Date.now() - tierStartedAt,
@@ -493,7 +486,6 @@ function findTierRecommendation(
         scenariosEvaluated,
         technicalChecks,
         technicalRejections,
-        parallelUnitsSkipped,
         candidateGenerationMs,
         validationMs: Date.now() - validationStartedAt,
         elapsedMs: Date.now() - tierStartedAt,
@@ -523,7 +515,6 @@ function findTierRecommendation(
       scenariosEvaluated,
       technicalChecks,
       technicalRejections,
-      parallelUnitsSkipped,
       candidateGenerationMs,
       validationMs: Date.now() - validationStartedAt,
       elapsedMs: Date.now() - tierStartedAt,
@@ -567,7 +558,6 @@ function findTierRecommendation(
     scenariosEvaluated,
     technicalChecks,
     technicalRejections,
-    parallelUnitsSkipped,
     candidateGenerationMs,
     validationMs: Date.now() - validationStartedAt,
     elapsedMs: Date.now() - tierStartedAt,
