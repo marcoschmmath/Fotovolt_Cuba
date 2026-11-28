@@ -192,7 +192,7 @@ function evaluateBehavior(input: EvaluationInput, mode: CookingMode): BehaviorOu
   });
   const run = (gridAvailable: boolean[]): SimulationResult =>
     simulate(buildEnergySystemConfig(bridge(gridAvailable)), {
-      cooking,
+      cooking: { ...cooking },
       socFloorByInterval: floor,
       startHour: 8,
       startSoc: initialSoc,
