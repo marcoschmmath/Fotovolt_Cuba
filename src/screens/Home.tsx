@@ -79,7 +79,7 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
           </p>
         </div>
         <div className="home-hero__art">
-          <img src="/images/solar-home-hero.jpg" alt="Casa tropical cubana con paneles solares, batería y palmas" />
+          <img src="/images/solar-home-hero.webp" alt="Casa tropical cubana con paneles solares, batería y palmas" />
         </div>
       </section>
 
