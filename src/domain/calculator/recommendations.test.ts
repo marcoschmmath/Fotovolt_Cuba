@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generateSolarRecommendations } from './recommendations';
+import { batteryBankFitsNightEnergy, generateSolarRecommendations, RECOMMENDATION_LIMITS } from './recommendations';
 import { batteryPack } from './battery';
 import type { HouseholdProfile } from '../household/types';
 import { DEFAULT_COOKING, defaultCookingActivities } from '../household/types';
@@ -43,6 +43,21 @@ function household(): HouseholdProfile {
     updatedAt: '2026-01-01T00:00:00.000Z',
   };
 }
+
+describe('filtros del recomendador', () => {
+  it('aplica el intervalo de capacidad del banco entre un tercio y el doble de la energía nocturna', () => {
+    expect(batteryBankFitsNightEnergy(5, 1.67)).toBe(true);
+    expect(batteryBankFitsNightEnergy(5, 5.12)).toBe(true);
+    expect(batteryBankFitsNightEnergy(5, 10)).toBe(true);
+    expect(batteryBankFitsNightEnergy(5, 1.66)).toBe(false);
+    expect(batteryBankFitsNightEnergy(5, 10.24)).toBe(false);
+    expect(batteryBankFitsNightEnergy(5, 15.36)).toBe(false);
+  });
+
+  it('limita las sugerencias a 10 baterías y 50 paneles', () => {
+    expect(RECOMMENDATION_LIMITS).toEqual({ maxPanels: 50, maxBatteries: 10 });
+  });
+});
 
 describe('generateSolarRecommendations', () => {
   it('genera tres niveles aplicando el criterio de compatibilidad existente (08:00, SOC inicial 30 %)', () => {
