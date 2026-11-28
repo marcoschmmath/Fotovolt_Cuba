@@ -273,7 +273,7 @@ export function Home({ navigate }: { navigate: (path: string) => void }) {
                           <div>
                             <strong>{inst.name}</strong>
                             <p className="field__hint" style={{ margin: '.15rem 0 0' }}>
-                              {inst.panelCount} × {panel?.powerW ?? 0} W · {inst.batteryCount} × {battery?.nominalKwh ?? 0} kWh · inversor {inverter ? fmtW(inverter.ratedW) : '—'}
+                              {inst.panelCount} × {panel?.powerW ?? 0} W · {inst.batteryCount} × {battery?.nominalKwh ?? 0} kWh · {(inst.inverterCount ?? 1)} × inversor {inverter ? fmtW(inverter.ratedW) : '—'}
                               {inst.origin === 'offer' ? ' · desde oferta' : ''}
                             </p>
                           </div>
