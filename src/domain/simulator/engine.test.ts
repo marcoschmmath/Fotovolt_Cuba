@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { simulate, unservedEvents } from './engine';
+import { prepareSimulation, simulate, unservedEvents } from './engine';
 import { appliance, battery, config, grid, inverter, panel, params } from '../../test/fixtures';
 
 describe('simulación temporal', () => {
@@ -117,5 +117,30 @@ describe('simulación temporal', () => {
   it('el panel de la plantilla no excede límites del inversor en la configuración base', () => {
     const result = simulate(config({ panelCount: 2, panel: panel() }));
     expect(result.intervals.every((i) => i.soc >= 0 && i.soc <= 1)).toBe(true);
+  });
+
+  it('el modo resumido conserva las mismas métricas que el detallado sin materializar intervalos', () => {
+    const p = params();
+    const system = config({
+      params: p,
+      appliances: [
+        appliance({ id: 'fast-critical', powerW: 350, hoursPerDay: 8, schedule: 'night', priority: 'critical' }),
+        appliance({ id: 'fast-day', powerW: 180, hoursPerDay: 5, schedule: 'day', priority: 'important' }),
+      ],
+      grid: grid({ available: new Array(96).fill(false) }, p),
+    });
+    const options = { startHour: 8, startSoc: 0.30 };
+    const detailed = simulate(system, options);
+    const compact = simulate(system, {
+      ...options,
+      prepared: prepareSimulation(system),
+      collectIntervals: false,
+    });
+
+    expect(compact.intervals).toHaveLength(0);
+    expect(compact.totals).toEqual(detailed.totals);
+    expect(compact.summary).toEqual(detailed.summary);
+    expect(compact.valid).toBe(detailed.valid);
+    expect(compact.maxBalanceErrorKwh).toBeCloseTo(detailed.maxBalanceErrorKwh, 12);
   });
 });
