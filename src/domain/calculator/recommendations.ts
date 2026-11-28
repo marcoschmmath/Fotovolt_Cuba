@@ -356,8 +356,10 @@ function findTierRecommendation(
           const maxPanels = Math.min(MAX_PANEL_COUNT, Math.floor(effective.maxPvInputW / panel.powerW));
           if (desiredPanelCount > maxPanels) continue;
 
-          // Añadir paneles sólo cuando la primera cantidad deseada no forma
-          // strings válidos; conservar el menor campo FV técnicamente posible.
+          // El tamaño calculado es sólo el punto de partida. La simulación
+          // puede necesitar más paneles para sostener el SOC en los 24 horarios
+          // de red; por eso se generan todos los tamaños eléctricamente válidos
+          // hasta el límite de entrada del inversor y el máximo residencial.
           for (let panelCount = desiredPanelCount; panelCount <= maxPanels; panelCount += 1) {
             const cacheKey = `${inverter.id}:${inverterCount}:${panel.id}:${panelCount}`;
             let arrayCheck = arrayCheckCache.get(cacheKey);
@@ -415,7 +417,8 @@ function findTierRecommendation(
                 elapsedMs: Date.now() - tierStartedAt,
               });
             }
-            break;
+            // No detenerse aquí: una cantidad mayor puede ser la primera
+            // que supere la simulación energética aunque esta ya sea técnica.
           }
         }
       }
@@ -585,9 +588,9 @@ function findTierRecommendation(
 
 /**
  * Búsqueda en dos fases:
- * 1) genera y filtra candidatos mediante límites físicos y comprobaciones
- *    técnicas baratas; conserva el menor campo PV de cada combinación y
- *    omite cantidades paralelas por debajo de una cota inferior demostrable.
+ * 1) genera candidatos dentro de los límites físicos y comprueba su
+ *    compatibilidad técnica; para cada combinación conserva todos los tamaños
+ *    de campo PV admisibles desde el objetivo inicial hasta el límite del inversor.
  * 2) ordena por exceso de capacidad, rechaza en el primer escenario que falle
  *    y calcula el apagón total sólo para una candidata que supera los 24 horarios.
  */
