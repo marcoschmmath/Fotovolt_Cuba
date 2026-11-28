@@ -110,6 +110,12 @@ export interface RecommendationGenerationOptions {
   onTierComplete?: (card: RecommendationCard) => void;
 }
 
+export type RecommendationWorkerResponse =
+  | { type: 'progress'; progress: RecommendationProgress }
+  | { type: 'tier'; card: RecommendationCard }
+  | { type: 'complete'; cards: RecommendationCard[] }
+  | { type: 'error'; message: string };
+
 interface CandidateSearchInput extends RecommendationInput {
   tier: RecommendationTier;
   scenarioHousehold: HouseholdProfile;
