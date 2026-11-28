@@ -242,7 +242,7 @@ export function Recommendations({
           <p className="result-description" aria-live="polite">{progressDescription}</p>
           {progress && (
             <p className="field__hint">
-              {progress.candidatesGenerated} combinaciones generadas · {progress.candidatesValidated} validadas · {progress.scenariosEvaluated} escenarios simulados · {progress.technicalChecks ?? 0} comprobaciones técnicas
+              {progress.candidatesGenerated} candidatas generadas · {progress.candidatesValidated} evaluadas · {progress.scenariosEvaluated} escenarios · {progress.technicalChecks ?? 0} chequeos técnicos
             </p>
           )}
           <div className="recommendation-progress" aria-hidden="true">
@@ -290,7 +290,7 @@ export function Recommendations({
           <ul>
             {Object.values(progressByTier).map((item) => (
               <li key={item.tierId}>
-                <strong>{item.tierId}</strong>: {item.candidatesGenerated} candidatas · {item.candidatesValidated} simuladas · {item.scenariosEvaluated} escenarios · {item.technicalChecks ?? 0} chequeos técnicos ({item.technicalRejections ?? 0} descartes técnicos) · {item.elapsedMs ?? 0} ms totales
+                <strong>{item.tierId}</strong>: {item.candidatesGenerated} candidatas · {item.candidatesValidated} simuladas · {item.scenariosEvaluated} escenarios · {item.technicalChecks ?? 0} chequeos técnicos ({item.technicalRejections ?? 0} descartes) · {item.parallelUnitsSkipped ?? 0} unidades paralelas omitidas por cota · {item.candidateGenerationMs ?? 0} ms generación + {item.validationMs ?? 0} ms validación = {item.elapsedMs ?? 0} ms
               </li>
             ))}
           </ul>
