@@ -11,7 +11,7 @@ import type { Diagnostic, EnergySystemConfig, SimulationResult } from '../core/t
 import { isWithinWindow } from '../calculator/energy';
 import type { HouseholdProfile } from '../household/types';
 import type { SystemConfiguration } from '../system/types';
-import { simulate, type CookingRuntimeInput } from './engine';
+import { prepareSimulation, simulate, type CookingRuntimeInput } from './engine';
 import { batteryPack } from '../calculator/battery';
 import {
   BLACKOUT_SCENARIO_ID,
@@ -108,7 +108,7 @@ function outcomeOf(
   // Déficit de noche: energía esencial que quedó sin servir DENTRO de la
   // franja nocturna del hogar. No es un porcentaje arbitrario: es lo que el
   // hogar necesitaba y el sistema no pudo dar.
-  const nightDeficitKwh = result.intervals.reduce((sum, interval) => {
+  const nightDeficitKwh = result.summary?.nightDeficitKwh ?? result.intervals.reduce((sum, interval) => {
     const isNight = isWithinWindow(interval.hour, nightWindow.start, nightWindow.end) && nightWindow.start !== nightWindow.end;
     return sum + (isNight ? interval.unservedByPriorityKwh.critical : 0);
   }, 0);
@@ -168,7 +168,28 @@ function aggregate(
  * comportamientos de cocción. Devuelve el conjunto completo (el motor corre
  * 50 veces sobre series de 96 intervalos: sigue siendo análisis instantáneo).
  */
-function evaluateBehavior(input: EvaluationInput, mode: CookingMode): BehaviorOutcome {
+interface BehaviorEvaluationOptions {
+  /** No almacenar IntervalResult cuando sólo se está filtrando un candidato. */
+  collectIntervals?: boolean;
+  /** Rechazar en cuanto un escenario viola una de las condiciones de aceptación. */
+  rejectIncompatibleEarly?: boolean;
+  onScenarioEvaluated?: (scenario: GridReturnScenario) => void;
+}
+
+function scenarioPassesRecommendationCriteria(
+  outcome: ScenarioOutcome,
+  initialSoc: number,
+): boolean {
+  return outcome.coverage >= 0.999 &&
+    outcome.finalSoc >= initialSoc - 0.005 &&
+    outcome.cookingMealsUnmet === 0;
+}
+
+function evaluateBehavior(
+  input: EvaluationInput,
+  mode: CookingMode,
+  options: BehaviorEvaluationOptions = {},
+): BehaviorOutcome | null {
   const { household, system } = input;
   const params = system.params;
   const floor = socFloorByInterval(household, params, input.battery, system.batteryCount, input.inverter);
@@ -190,18 +211,39 @@ function evaluateBehavior(input: EvaluationInput, mode: CookingMode): BehaviorOu
     inverter: input.inverter,
     gridAvailable,
   });
-  const run = (gridAvailable: boolean[]): SimulationResult =>
-    simulate(buildEnergySystemConfig(bridge(gridAvailable)), {
-      cooking: { ...cooking },
+
+  // Todo lo que no depende de la presencia de red se construye una sola vez.
+  // Entre escenarios sólo cambia grid.available y, por tanto, el estado dinámico.
+  const baseConfig = buildEnergySystemConfig(bridge(scenarios[0]?.available ?? blackout.available));
+  const prepared = prepareSimulation(baseConfig);
+  const run = (gridAvailable: boolean[]) =>
+    simulate({
+      ...baseConfig,
+      grid: { ...baseConfig.grid, available: gridAvailable },
+    }, {
+      cooking,
       socFloorByInterval: floor,
       startHour: 8,
       startSoc: initialSoc,
+      prepared,
+      collectIntervals: options.collectIntervals !== false,
     });
+
   const nightWindow = { start: params.nightStart, end: params.nightEnd };
-  const outcomes = scenarios.map((scenario) =>
-    outcomeOf(scenario, run(scenario.available), nightWindow),
-  );
+  const outcomes: ScenarioOutcome[] = [];
+  for (const scenario of scenarios) {
+    const outcome = outcomeOf(scenario, run(scenario.available), nightWindow);
+    outcomes.push(outcome);
+    options.onScenarioEvaluated?.(scenario);
+    if (options.rejectIncompatibleEarly && !scenarioPassesRecommendationCriteria(outcome, initialSoc)) {
+      return null;
+    }
+  }
+
+  // El apagón total no forma parte del criterio de aceptación. Se calcula
+  // sólo después de que los 24 escenarios normales hayan superado el filtro.
   const blackoutOutcome = outcomeOf(blackout, run(blackout.available), nightWindow);
+  options.onScenarioEvaluated?.(blackout);
   return aggregate(mode, outcomes, blackoutOutcome, initialSoc);
 }
 
@@ -210,16 +252,35 @@ export function evaluateSystemBehavior(
   input: EvaluationInput,
   mode: CookingMode = 'usual',
 ): BehaviorOutcome {
-  return evaluateBehavior(input, mode);
+  const outcome = evaluateBehavior(input, mode);
+  if (!outcome) throw new Error('La evaluación completa no debe rechazar escenarios anticipadamente.');
+  return outcome;
+}
+
+/**
+ * Validador del recomendador: devuelve null en el primer escenario que no
+ * cumple exactamente el criterio actual. Sólo si los 24 pasan evalúa el
+ * apagón total y produce todas las métricas de la recomendación.
+ */
+export function evaluateCompatibleSystemBehavior(
+  input: EvaluationInput,
+  mode: CookingMode = 'usual',
+  onScenarioEvaluated?: (scenario: GridReturnScenario) => void,
+): BehaviorOutcome | null {
+  return evaluateBehavior(input, mode, {
+    collectIntervals: false,
+    rejectIncompatibleEarly: true,
+    onScenarioEvaluated,
+  });
 }
 
 /** Evaluación completa utilizada por Resultados y Comparaciones. */
 export function evaluateSystem(input: EvaluationInput): SystemEvaluation {
+  const usual = evaluateBehavior(input, 'usual');
+  const flexible = evaluateBehavior(input, 'flexible');
+  if (!usual || !flexible) throw new Error('La evaluación completa no debe rechazar escenarios anticipadamente.');
   return {
-    behaviors: {
-      usual: evaluateBehavior(input, 'usual'),
-      flexible: evaluateBehavior(input, 'flexible'),
-    },
+    behaviors: { usual, flexible },
     scenarios: gridReturnScenarios(input.system.params),
   };
 }
