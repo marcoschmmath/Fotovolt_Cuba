@@ -10,6 +10,7 @@ import { householdForRecommendation, type RecommendationTierId } from '../househ
 import { analyzeEnergy, isWithinWindow, peakDesignW, type EnergyBreakdown } from './energy';
 import { requiredBatteryNominalKwh } from './battery';
 import { requiredPvWatts } from './sizing';
+import { checkBalancedArrayConfiguration, type BalancedArrayConfigurationCheck } from './pv';
 import { checkInverterCompatibility, inverterWithParallelUnits } from './inverter';
 import { evaluateSystemBehavior } from '../simulator/scenarioGrid';
 
@@ -287,6 +288,7 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
 
   // FASE 1C: generación técnica. No se ejecuta todavía el simulador.
   const candidates: RecommendationCandidate[] = [];
+  const arrayCheckCache = new Map<string, BalancedArrayConfigurationCheck>();
   for (const batteryOption of batteryOptions) {
     const { battery, batteryCount, targetBatteryKwh, targetPvW } = batteryOption;
     for (const inverterOption of inverterOptions) {
@@ -306,12 +308,19 @@ function findTierRecommendation(input: CandidateSearchInput): SolarRecommendatio
         // El primer número técnicamente admisible es el menor campo solar
         // para este conjunto de equipos; añadir paneles no mejora su tamaño.
         for (let panelCount = desiredPanelCount; panelCount <= maxPanels; panelCount += 1) {
+          const cacheKey = `${inverter.id}:${inverterCount}:${panel.id}:${panelCount}`;
+          let arrayCheck = arrayCheckCache.get(cacheKey);
+          if (!arrayCheck) {
+            arrayCheck = checkBalancedArrayConfiguration(panel, effective, panelCount, params);
+            arrayCheckCache.set(cacheKey, arrayCheck);
+          }
           const technical = checkInverterCompatibility({
             inverter: effective,
             battery,
             panel,
             panelCount,
             batteryCount,
+            arrayCheck,
             continuousW: requiredContinuousW,
             peakW: requiredPeakW,
             voltage: household.voltage,
