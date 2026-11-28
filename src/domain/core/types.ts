@@ -100,6 +100,8 @@ export interface InverterSpec {
   batteryVoltageV: number;
   maxChargeA: number;
   maxDischargeA: number;
+  /** Máximo de unidades idénticas admitidas en paralelo, sólo si está documentado. */
+  maxParallelUnits?: number;
   /**
    * Potencia del cargador AC→DC interno (red → batería) en W, declarada por el
    * fabricante. Ausente o 0 = el inversor NO puede cargar la batería desde la
