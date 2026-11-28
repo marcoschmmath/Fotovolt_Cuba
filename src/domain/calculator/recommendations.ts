@@ -187,16 +187,16 @@ function candidateScore(candidate: RecommendationCandidate): number {
   const installedBatteryKwh = candidate.battery.nominalKwh * candidate.batteryCount;
   const installedPvW = candidate.panel.powerW * candidate.panelCount;
   const inverterW = candidate.inverter.ratedW * candidate.inverterCount;
-  const batteryExcess = candidate.targetBatteryKwh > 0
-    ? Math.max(0, installedBatteryKwh - candidate.targetBatteryKwh) / candidate.targetBatteryKwh
+  const batteryRatio = candidate.targetBatteryKwh > 0
+    ? installedBatteryKwh / candidate.targetBatteryKwh
     : installedBatteryKwh;
-  const pvExcess = candidate.targetPvW > 0
-    ? Math.max(0, installedPvW - candidate.targetPvW) / candidate.targetPvW
+  const pvRatio = candidate.targetPvW > 0
+    ? installedPvW / candidate.targetPvW
     : installedPvW / 1000;
-  const inverterExcess = candidate.requiredPeakW > 0
-    ? Math.max(0, inverterW - candidate.requiredPeakW) / candidate.requiredPeakW
+  const inverterRatio = candidate.requiredPeakW > 0
+    ? inverterW / candidate.requiredPeakW
     : inverterW / 1000;
-  return batteryExcess * 3 + pvExcess * 2 + inverterExcess;
+  return batteryRatio * 3 + pvRatio * 2 + inverterRatio;
 }
 
 function sortCandidates(candidates: RecommendationCandidate[]): RecommendationCandidate[] {
