@@ -108,11 +108,60 @@ describe('generateSolarRecommendations', () => {
 
     const moderate = result.find((card) => card.tier.id === 'moderate');
     expect(moderate).toBeDefined();
+
+    // Diagnóstico exhaustivo temporal: identifica para cada tamaño de array
+    // los escenarios que no alcanzan el 99,9 % y si el déficit afecta a SOC.
+    const moderateHousehold = householdForRecommendation(source, 'moderate');
+    const debugPanelCounts = [4, 5, 6, 7, 8, 10, 12, 14];
+    const simulationDiagnostics = debugPanelCounts.map((panelCount) => {
+      const debugSystem: SystemConfiguration = {
+        id: `debug-${panelCount}`,
+        householdProfileId: source.id,
+        recommendationTier: 'moderate',
+        name: 'Diagnóstico',
+        panelId: panel().id,
+        panelCount,
+        batteryId: battery().id,
+        batteryCount: 1,
+        inverterId: inverter().id,
+        inverterCount: 1,
+        installationType: 'hybrid',
+        params: params({ hsp: 2.5, safetyFactor: 0.01 }),
+        origin: 'user',
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+      };
+      const outcome = evaluateSystemBehavior({
+        household: moderateHousehold,
+        system: debugSystem,
+        panel: panel(),
+        battery: battery(),
+        inverter: inverter(),
+      }, 'usual');
+      return {
+        panelCount,
+        coverageWorst: outcome.coverageWorst,
+        energySustainable: outcome.energySustainable,
+        finalSocWorst: Math.min(...outcome.scenarios.map((scenario) => scenario.finalSoc)),
+        lowCoverage: outcome.scenarios
+          .filter((scenario) => scenario.coverage < 0.999)
+          .map((scenario) => ({
+            label: scenario.label,
+            coverage: scenario.coverage,
+            unservedKwh: scenario.unservedKwh,
+            unservedCriticalKwh: scenario.unservedCriticalKwh,
+            finalSoc: scenario.finalSoc,
+            minSoc: scenario.minSoc,
+          })),
+      };
+    });
+
     expect(
       moderate?.recommendation,
       JSON.stringify({
         progress: lastModerateProgress,
         lastEnergyRejection: lastModerateRejection,
+        simulationDiagnostics,
       }),
     ).not.toBeNull();
     expect(moderate!.recommendation!.panelCount).toBeGreaterThan(
