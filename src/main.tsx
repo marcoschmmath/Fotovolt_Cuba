@@ -3,6 +3,7 @@ import { createRoot } from 'react-dom/client';
 import App from './App';
 import { AppProvider } from './app/AppContext';
 import './styles.css';
+import './mobile-polish.css';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
