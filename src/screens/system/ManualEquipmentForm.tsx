@@ -228,6 +228,7 @@ export function ManualEquipmentForm({
       maxPvVoltageV: value('maxPvVoltageV'),
       maxChargeA: value('maxChargeA'),
       maxDischargeA: value('maxDischargeA'),
+      ...(value('maxParallelUnits') >= 2 ? { maxParallelUnits: Math.min(16, Math.round(value('maxParallelUnits'))) } : {}),
       gridChargerW: value('gridChargerW'),
       mppt: mppt.filter((row) => Object.values(row).some((field) => field > 0)),
       acVoltages,
@@ -318,6 +319,7 @@ export function ManualEquipmentForm({
               <OptionalNumber label="Tensión PV máxima absoluta" value={values.maxPvVoltageV ?? ''} unit="V" onChange={(v) => setValue('maxPvVoltageV', v)} />
               <OptionalNumber label="Corriente máxima de carga" value={values.maxChargeA ?? ''} unit="A" onChange={(v) => setValue('maxChargeA', v)} />
               <OptionalNumber label="Corriente máxima de descarga" value={values.maxDischargeA ?? ''} unit="A" onChange={(v) => setValue('maxDischargeA', v)} />
+              <OptionalNumber label="Máximo de inversores en paralelo" value={values.maxParallelUnits ?? ''} min={1} max={16} step={1} hint="Sólo introduce este dato si el fabricante declara explícitamente el funcionamiento en paralelo y su cantidad máxima." onChange={(v) => setValue('maxParallelUnits', v)} />
               <OptionalNumber label="Cargador desde la red" value={values.gridChargerW ?? ''} unit="W" hint="Si no se declara, SolarAPP no da por hecho que pueda cargar la batería desde la red." onChange={(v) => setValue('gridChargerW', v)} />
             </div>
             <div className="manual-mppt-list">
