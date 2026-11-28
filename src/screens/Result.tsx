@@ -6,7 +6,7 @@ import { scenarioById, HIGHLIGHT_SCENARIO_IDS } from '../domain/simulator/gridSc
 import { buildEnergySystemConfig, socFloorByInterval, nightEssentialKwh } from '../domain/simulator/bridge';
 import { simulate } from '../domain/simulator/engine';
 import { analyzeEnergy, peakDesignW } from '../domain/calculator/energy';
-import { checkInverterCompatibility } from '../domain/calculator/inverter';
+import { checkInverterCompatibility, inverterWithParallelUnits } from '../domain/calculator/inverter';
 import { batteryPack } from '../domain/calculator/battery';
 import { BatteryRing, SocChart } from '../ui/charts';
 import { Badge, Button, Note, Panel, SectionTitle, Segmented, Stat, Stepper, Toast, fmtKwh } from '../ui/components';
@@ -143,7 +143,7 @@ export function Result({ navigate, installationId }: { navigate: (path: string) 
   const energyCompatible = fullCoverage && outcome.energySustainable && outcome.cookingMealsUnmetWorst === 0;
   const householdDemand = analyzeEnergy(household.appliances, system.params);
   const technicalCheck = checkInverterCompatibility({
-    inverter, battery, panel, panelCount: system.panelCount, batteryCount: system.batteryCount,
+    inverter: inverterWithParallelUnits(inverter, system.inverterCount ?? 1), battery, panel, panelCount: system.panelCount, batteryCount: system.batteryCount,
     continuousW: householdDemand.peakSimultaneousW,
     peakW: peakDesignW(householdDemand),
     voltage: household.voltage, params: system.params,
@@ -158,7 +158,7 @@ export function Result({ navigate, installationId }: { navigate: (path: string) 
       <SectionTitle
         eyebrow={`${household.name} · ${system.name}`}
         title="Resultados de tu sistema"
-        description={`${system.panelCount} paneles de ${panel?.powerW ?? 0} W · ${system.batteryCount} baterías de ${battery?.nominalKwh ?? 0} kWh · inversor de ${inverter?.ratedW ?? 0} W`}
+        description={`${system.panelCount} paneles de ${panel?.powerW ?? 0} W · ${system.batteryCount} baterías de ${battery?.nominalKwh ?? 0} kWh · ${(system.inverterCount ?? 1)} × inversor de ${inverter?.ratedW ?? 0} W`}
       />
 
       <div className="result-tabs" role="tablist" aria-label="Secciones de resultados">
