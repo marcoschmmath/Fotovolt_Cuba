@@ -103,6 +103,11 @@ export interface RecommendationProgress {
   candidatesGenerated: number;
   candidatesValidated: number;
   scenariosEvaluated: number;
+  technicalChecks?: number;
+  technicalRejections?: number;
+  candidateGenerationMs?: number;
+  validationMs?: number;
+  elapsedMs?: number;
 }
 
 export interface RecommendationGenerationOptions {
@@ -281,6 +286,15 @@ function findTierRecommendation(
   const { household, tier, scenarioHousehold, params, energy, sizingEnergy } = input;
   if (!hasDeclaredLoad(scenarioHousehold)) return null;
 
+  const tierStartedAt = Date.now();
+  const generationStartedAt = tierStartedAt;
+  let candidateGenerationMs = 0;
+  let validationStartedAt = 0;
+  let technicalChecks = 0;
+  let technicalRejections = 0;
+  let candidatesValidated = 0;
+  let scenariosEvaluated = 0;
+
   const requiredContinuousW = energy.peakSimultaneousW * tier.inverterMargin;
   const requiredPeakW = peakDesignW(energy);
   const nightEnergyKwh = Math.max(0, sizingEnergy.nightKwh);
@@ -313,7 +327,21 @@ function findTierRecommendation(
     }
     return choices;
   });
-  if (!batteryOptions.length) return null;
+  if (!batteryOptions.length) {
+    options.onProgress?.({
+      tierId: tier.id,
+      phase: 'complete',
+      candidatesGenerated: 0,
+      candidatesValidated: 0,
+      scenariosEvaluated: 0,
+      technicalChecks: 0,
+      technicalRejections: 0,
+      candidateGenerationMs: Date.now() - generationStartedAt,
+      validationMs: 0,
+      elapsedMs: Date.now() - tierStartedAt,
+    });
+    return null;
+  }
 
   // FASE 1B: saltar cantidades de inversores que no pueden alcanzar ni los
   // mínimos de potencia, arranque, entrada PV o corriente de descarga.
@@ -324,6 +352,11 @@ function findTierRecommendation(
     candidatesGenerated: 0,
     candidatesValidated: 0,
     scenariosEvaluated: 0,
+    technicalChecks,
+    technicalRejections,
+    candidateGenerationMs: 0,
+    validationMs: 0,
+    elapsedMs: Date.now() - tierStartedAt,
   });
 
   for (const batteryOption of batteryOptions) {
@@ -363,6 +396,7 @@ function findTierRecommendation(
               arrayCheck = checkBalancedArrayConfiguration(panel, effective, panelCount, params);
               arrayCheckCache.set(cacheKey, arrayCheck);
             }
+            technicalChecks += 1;
             const technical = checkInverterCompatibility({
               inverter: effective,
               battery,
@@ -377,6 +411,7 @@ function findTierRecommendation(
             });
 
             if (!technical.compatible) {
+              technicalRejections += 1;
               const errors = technical.diagnostics.filter((item) => item.level === 'error');
               // Un problema MPPT puede cambiar al variar la cantidad de paneles.
               // Potencia, tensión o descarga insuficientes no se arreglan así.
@@ -404,6 +439,11 @@ function findTierRecommendation(
                 candidatesGenerated: candidates.length,
                 candidatesValidated: 0,
                 scenariosEvaluated: 0,
+                technicalChecks,
+                technicalRejections,
+                candidateGenerationMs: Date.now() - generationStartedAt,
+                validationMs: 0,
+                elapsedMs: Date.now() - tierStartedAt,
               });
             }
             break;
@@ -416,14 +456,19 @@ function findTierRecommendation(
   // FASE 2: ordenar por capacidad y probar primero el banco más pequeño.
   // No se eliminan automáticamente bancos mayores del mismo modelo: una
   // corriente de carga AC adicional puede ser decisiva para la sostenibilidad.
-  let candidatesValidated = 0;
-  let scenariosEvaluated = 0;
+  candidateGenerationMs = Date.now() - generationStartedAt;
+  validationStartedAt = Date.now();
   options.onProgress?.({
     tierId: tier.id,
     phase: 'validating',
     candidatesGenerated: candidates.length,
     candidatesValidated,
     scenariosEvaluated,
+    technicalChecks,
+    technicalRejections,
+    candidateGenerationMs,
+    validationMs: 0,
+    elapsedMs: Date.now() - tierStartedAt,
   });
 
   for (const candidate of sortCandidates(candidates)) {
@@ -472,6 +517,11 @@ function findTierRecommendation(
         candidatesGenerated: candidates.length,
         candidatesValidated,
         scenariosEvaluated,
+        technicalChecks,
+        technicalRejections,
+        candidateGenerationMs,
+        validationMs: Date.now() - validationStartedAt,
+        elapsedMs: Date.now() - tierStartedAt,
       });
     });
     if (!usual) continue;
@@ -496,6 +546,11 @@ function findTierRecommendation(
       candidatesGenerated: candidates.length,
       candidatesValidated,
       scenariosEvaluated,
+      technicalChecks,
+      technicalRejections,
+      candidateGenerationMs,
+      validationMs: Date.now() - validationStartedAt,
+      elapsedMs: Date.now() - tierStartedAt,
     });
     return {
       tier: tier.id,
