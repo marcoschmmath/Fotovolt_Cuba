@@ -1498,3 +1498,32 @@ body { background: #f6f5ef; }
 @media (max-width: 640px) {
   .recommendation-equipment { grid-template-columns: 1fr; }
 }
+
+
+/* La búsqueda automática corre en un Web Worker; el progreso no bloquea la UI. */
+.recommendation-calculation {
+  display: grid;
+  gap: .65rem;
+}
+.recommendation-calculation .panel__head { margin-bottom: 0; }
+.recommendation-progress {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(42, 105, 67, .12);
+}
+.recommendation-progress > span {
+  display: block;
+  width: 36%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--forest-600);
+  animation: recommendation-progress-slide 1.35s ease-in-out infinite alternate;
+}
+@keyframes recommendation-progress-slide {
+  from { transform: translateX(0); }
+  to { transform: translateX(175%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .recommendation-progress > span { animation: none; width: 100%; }
+}
