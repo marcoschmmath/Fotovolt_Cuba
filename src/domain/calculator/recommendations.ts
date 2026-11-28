@@ -105,6 +105,7 @@ export interface RecommendationProgress {
   scenariosEvaluated: number;
   technicalChecks?: number;
   technicalRejections?: number;
+  parallelUnitsSkipped?: number;
   candidateGenerationMs?: number;
   validationMs?: number;
   elapsedMs?: number;
@@ -292,6 +293,7 @@ function findTierRecommendation(
   let validationStartedAt = 0;
   let technicalChecks = 0;
   let technicalRejections = 0;
+  let parallelUnitsSkipped = 0;
   let candidatesValidated = 0;
   let scenariosEvaluated = 0;
 
@@ -336,6 +338,7 @@ function findTierRecommendation(
       scenariosEvaluated: 0,
       technicalChecks: 0,
       technicalRejections: 0,
+      parallelUnitsSkipped: 0,
       candidateGenerationMs: Date.now() - generationStartedAt,
       validationMs: 0,
       elapsedMs: Date.now() - tierStartedAt,
@@ -354,6 +357,7 @@ function findTierRecommendation(
     scenariosEvaluated: 0,
     technicalChecks,
     technicalRejections,
+    parallelUnitsSkipped,
     candidateGenerationMs: 0,
     validationMs: 0,
     elapsedMs: Date.now() - tierStartedAt,
@@ -371,6 +375,7 @@ function findTierRecommendation(
         requiredPeakW,
         params,
       });
+      parallelUnitsSkipped += Math.max(0, minUnits - 1);
       if (minUnits > maxUnits) continue;
 
       for (let inverterCount = minUnits; inverterCount <= maxUnits; inverterCount += 1) {
@@ -441,6 +446,7 @@ function findTierRecommendation(
                 scenariosEvaluated: 0,
                 technicalChecks,
                 technicalRejections,
+                parallelUnitsSkipped,
                 candidateGenerationMs: Date.now() - generationStartedAt,
                 validationMs: 0,
                 elapsedMs: Date.now() - tierStartedAt,
@@ -466,6 +472,7 @@ function findTierRecommendation(
     scenariosEvaluated,
     technicalChecks,
     technicalRejections,
+    parallelUnitsSkipped,
     candidateGenerationMs,
     validationMs: 0,
     elapsedMs: Date.now() - tierStartedAt,
@@ -519,6 +526,7 @@ function findTierRecommendation(
         scenariosEvaluated,
         technicalChecks,
         technicalRejections,
+        parallelUnitsSkipped,
         candidateGenerationMs,
         validationMs: Date.now() - validationStartedAt,
         elapsedMs: Date.now() - tierStartedAt,
@@ -548,6 +556,7 @@ function findTierRecommendation(
       scenariosEvaluated,
       technicalChecks,
       technicalRejections,
+      parallelUnitsSkipped,
       candidateGenerationMs,
       validationMs: Date.now() - validationStartedAt,
       elapsedMs: Date.now() - tierStartedAt,
