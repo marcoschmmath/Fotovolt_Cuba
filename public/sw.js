@@ -2,7 +2,7 @@
  * Service worker sin dependencias. Funciona con Rutas relativas (base './').
  * Objetivo: después de la primera carga, la aplicación abre y calcula sin red.
  */
-const VERSION = 'solar-cuba-v7';
+const VERSION = 'solar-cuba-v8';
 const CACHE = VERSION + '-shell';
 
 const CORE = [
@@ -15,6 +15,7 @@ const CORE = [
   'icons/icon-192.png',
   'icons/icon-512.png',
   'icons/icon-maskable.png',
+  'images/solar-home-hero.webp',
 ];
 
 function scopeUrl(path) {
@@ -28,7 +29,7 @@ async function precache() {
     const response = await cache.match(scopeUrl('index.html'));
     if (!response || !response.ok) return;
     const html = await response.text();
-    const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css|woff2|png|svg))"/g)]
+    const assets = [...html.matchAll(/(?:src|href)="([^"]+\.(?:js|css|woff2|png|svg|jpe?g|webp|avif))"/g)]
       .map((match) => match[1])
       .filter((url) => !url.startsWith('http') && !url.startsWith('data:'));
     await Promise.allSettled(assets.map((url) => cache.add(scopeUrl(url)).catch(() => {})));
