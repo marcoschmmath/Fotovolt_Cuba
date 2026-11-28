@@ -106,7 +106,7 @@ export const UNSERVED_EPSILON_KWH = 1e-9;
  * `kWh = potencia[W] × kwhPerWatt` (no es ni el paso en horas ni un energía).
  */
 export function simulate(config: EnergySystemConfig, options: SimulationOptions = {}): SimulationResult {
-  const { params, inverter, panel, battery, grid, solar } = config;
+  const { params, inverter, battery, grid } = config;
   const days = Math.max(1, Math.floor(options.days ?? 1));
   const count = intervalCount(params);
   const dtHours = stepHours(params);
@@ -162,7 +162,7 @@ export function simulate(config: EnergySystemConfig, options: SimulationOptions 
   let maxBalanceErrorKwh = 0;
   let nightDeficitKwh = 0;
   let finalSoc = startSoc;
-  let minSoc = startSoc;
+  let minSoc = 1;
   let firstCriticalFailure: number | null = null;
   let hitMinSoc = false;
   let hitFullSoc = false;
