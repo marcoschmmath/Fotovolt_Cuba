@@ -238,9 +238,11 @@ function evaluateBehavior(
     options.onScenarioEvaluated?.(scenario);
     if (options.rejectIncompatibleEarly && !scenarioPassesRecommendationCriteria(outcome, initialSoc)) {
       const reasons: string[] = [];
-      if (outcome.coverage < 0.999) reasons.push(`cobertura ${(outcome.coverage * 100).toFixed(2)} % (< 99,9 %)`);
-      if (outcome.finalSoc < initialSoc - 0.005) {
-        reasons.push(`SOC final ${(outcome.finalSoc * 100).toFixed(2)} % por debajo del umbral ${((initialSoc - 0.005) * 100).toFixed(2)} %`);
+      if (!(outcome.coverage >= 0.999)) {
+        reasons.push(`cobertura ${Number.isFinite(outcome.coverage) ? (outcome.coverage * 100).toFixed(2) + ' %' : 'no finita'} (se exige >= 99,9 %)`);
+      }
+      if (!(outcome.finalSoc >= initialSoc - 0.005)) {
+        reasons.push(`SOC final ${Number.isFinite(outcome.finalSoc) ? (outcome.finalSoc * 100).toFixed(2) + ' %' : 'no finito'} por debajo/no válido respecto al umbral ${((initialSoc - 0.005) * 100).toFixed(2)} %`);
       }
       if (outcome.cookingMealsUnmet > 0) reasons.push(`${outcome.cookingMealsUnmet} comida(s) eléctricas sin atender`);
       options.onScenarioRejected?.(scenario, reasons);
