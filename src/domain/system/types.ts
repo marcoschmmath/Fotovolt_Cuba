@@ -17,6 +17,8 @@ export interface SystemConfiguration {
   batteryId: string;
   batteryCount: number;
   inverterId: string;
+  /** Número de unidades idénticas del inversor conectadas en paralelo; omitido = 1. */
+  inverterCount?: number;
   installationType: 'hybrid' | 'offgrid';
   /** Hipótesis de cálculo propias de la instalación (sol, eficiencias, DoD…). */
   params: DesignParams;
